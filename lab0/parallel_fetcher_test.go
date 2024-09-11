@@ -170,7 +170,6 @@ func TestParallelFetcherConcurrentWithDelay(t *testing.T) {
 
 		checkResultSet(t, data, results)
 
-		// next call returns false
 		_, ok := pf.Fetch()
 		require.False(t, ok)
 	})
@@ -194,11 +193,9 @@ func TestParallelFetcherAfterCompletion(t *testing.T) {
 		results := callFetchNTimes(pf, 3)
 		checkResultSet(t, data, results)
 
-		// next call returns false
 		_, ok := pf.Fetch()
 		require.False(t, ok)
 
-		// subsequent calls also return false
 		_, ok = pf.Fetch()
 		require.False(t, ok)
 	})

@@ -1,0 +1,15 @@
+ESTIMATE of time to complete assignment: 7 hours
+
+      Time     Time
+Date  Started  Spent Work completed
+----  -------  ----  --------------
+9/8   11:00pm  2:00  read assignment, completed tour of go and answered questions
+9/9   11:00am  2:20  wrote all functions (merge, semaphore, parallel_fetch, queue)
+9/10   9:45pm  1:15  wrote all unit test cases
+9/11   11:05am 1:00  complete writeup, finish log and submit
+               ----
+               6:35  TOTAL time spent
+
+I did not discuss my solutions with anyone. I used ChatGPT to help me understand concepts in Go, and debugging, but not to write anything from scratch.
+
+This pset was not too difficult. I spent a lot of time understanding the innerworkings of Go, the Go scheduler, channels, goroutines, how they are put on threads and processes, and some nuances of Go. I ran into a few errors with race conditions and figuring out the "amount" of concurrency (whether to use goroutines for merging channels or one single select statement), but eventually settled on trying it in two different ways. The Parallel Fetcher works with just locking and unlocking a mutex. The semaphore controls access to a shared resource by allowing a set number of concurrent operations, blocking additional operations until resources become available.
