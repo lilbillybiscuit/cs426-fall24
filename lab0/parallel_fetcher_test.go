@@ -134,6 +134,72 @@ func TestParallelFetcher(t *testing.T) {
 	})
 }
 
-func TestParallelFetcherAdditional(t *testing.T) {
-	// TODO: add your additional tests here
+func TestParallelFetcherOrder(t *testing.T) {
+	t.Run("fetch order", func(t *testing.T) {
+		data := []string{"a", "b", "c", "d", "e"}
+		pf := lab0.NewParallelFetcher(NewMockFetcher(data, 0), 2)
+
+		results := callFetchNTimes(pf, 5)
+		require.Equal(t, data, results)
+
+		// next call returns false
+		_, ok := pf.Fetch()
+		require.False(t, ok)
+	})
+}
+
+func TestParallelFetcherConcurrentWithDelay(t *testing.T) {
+	t.Run("fetch with concurrency and delay", func(t *testing.T) {
+		data := []string{"a", "b", "c", "d", "e"}
+		mf := NewMockFetcher(data, 20*time.Millisecond)
+		pf := lab0.NewParallelFetcher(mf, 2)
+
+		wg := sync.WaitGroup{}
+		results := make([]string, 5)
+		for i := 0; i < 5; i++ {
+			wg.Add(1)
+			go func(index int) {
+				defer wg.Done()
+				v, ok := pf.Fetch()
+				if ok {
+					results[index] = v
+				}
+			}(i)
+		}
+		wg.Wait()
+
+		checkResultSet(t, data, results)
+
+		// next call returns false
+		_, ok := pf.Fetch()
+		require.False(t, ok)
+	})
+}
+
+func TestParallelFetcherEmptyData(t *testing.T) {
+	t.Run("fetch from empty data", func(t *testing.T) {
+		data := []string{}
+		pf := lab0.NewParallelFetcher(NewMockFetcher(data, 0), 1)
+
+		_, ok := pf.Fetch()
+		require.False(t, ok)
+	})
+}
+
+func TestParallelFetcherAfterCompletion(t *testing.T) {
+	t.Run("fetch after completion", func(t *testing.T) {
+		data := []string{"a", "b", "c"}
+		pf := lab0.NewParallelFetcher(NewMockFetcher(data, 0), 1)
+
+		results := callFetchNTimes(pf, 3)
+		checkResultSet(t, data, results)
+
+		// next call returns false
+		_, ok := pf.Fetch()
+		require.False(t, ok)
+
+		// subsequent calls also return false
+		_, ok = pf.Fetch()
+		require.False(t, ok)
+	})
 }

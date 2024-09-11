@@ -43,17 +43,17 @@ basics of programming in Go. Pay particular attention to the sections
 on generics, concurrency, and error handling.
 
 Go provides two powerful built-in features for managing concurrency:
- - **goroutines** which are lightweight threads to run tasks concurrently (and in parallel, on a system with multiple processing units)
- - **channels** (or `chan`) which allow for safe communication between goroutines
+- **goroutines** which are lightweight threads to run tasks concurrently (and in parallel, on a system with multiple processing units)
+- **channels** (or `chan`) which allow for safe communication between goroutines
 
 Go also provides a large amount of concurrency utilities as *library* code. Consider reading
 about the following:
- - [`context.Context`](https://pkg.go.dev/context): which allow for calling code to cancel operations (e.g. with timeouts or deadlines)
- and potentially pass "contextual" data
- - [`sync.Mutex`](https://go.dev/tour/concurrency/9): which provides standard mutual exclusion (or "locking") when accessing shared state
- from many threads of execution
- - [`semaphore`](https://pkg.go.dev/golang.org/x/sync/semaphore): which provides traditional [Counting Semaphore](https://en.wikipedia.org/wiki/Semaphore_(programming)) behavior
- - [`sync.WaitGroup`](https://pkg.go.dev/sync#WaitGroup): which helps when waiting for a number of concurrent tasks to complete
+- [`context.Context`](https://pkg.go.dev/context): which allow for calling code to cancel operations (e.g. with timeouts or deadlines)
+  and potentially pass "contextual" data
+- [`sync.Mutex`](https://go.dev/tour/concurrency/9): which provides standard mutual exclusion (or "locking") when accessing shared state
+  from many threads of execution
+- [`semaphore`](https://pkg.go.dev/golang.org/x/sync/semaphore): which provides traditional [Counting Semaphore](https://en.wikipedia.org/wiki/Semaphore_(programming)) behavior
+- [`sync.WaitGroup`](https://pkg.go.dev/sync#WaitGroup): which helps when waiting for a number of concurrent tasks to complete
 
 ## Written Questions (Short Answers)
 
@@ -68,12 +68,12 @@ You should write your answers in your `discussions.md` file. Keep answers brief.
 
 ```go
 func FunWithChannels() {
-    ch := make(chan string)
+ch := make(chan string)
 
-    ch <- "hello world!"
+ch <- "hello world!"
 
-    message := <-ch
-    fmt.Println(message)
+message := <-ch
+fmt.Println(message)
 }
 ```
 
@@ -90,9 +90,9 @@ What is the difference between `<-chan T`, `chan<- T` and `chan T`?
 6) When does the following loop terminate?
 ```go
 func FunReadingChannels(ch chan string) {
-    for item := range ch {
-        fmt.Println(item)
-    }
+for item := range ch {
+fmt.Println(item)
+}
 }
 ```
 
@@ -100,10 +100,10 @@ func FunReadingChannels(ch chan string) {
 8) What does the following code (most likely) print in the most recent versions of Go (e.g., Go 1.23)? Why is that?
 ```go
 for i := 1; i <= 3; i++ {
-    go func() {
-        time.Sleep(time.Duration(i) * time.Second)
-        fmt.Printf("%d\n", i)
-    }()
+go func() {
+time.Sleep(time.Duration(i) * time.Second)
+fmt.Printf("%d\n", i)
+}()
 }
 fmt.Println("all done!")
 ```
@@ -116,22 +116,22 @@ fmt.Println("all done!")
 ```go
 type Bar struct{}
 type Foo struct {
-	items  []string
-	str    string
-	num    int
-	barPtr *Bar
-	bar    Bar
+items  []string
+str    string
+num    int
+barPtr *Bar
+bar    Bar
 }
 
 func FunWithStructs() {
-	var foo Foo
-	fmt.Println(foo.items)
-	fmt.Println(len(foo.items))
-	fmt.Println(foo.items == nil)
-	fmt.Println(foo.str)
-	fmt.Println(foo.num)
-	fmt.Println(foo.barPtr)
-	fmt.Println(foo.bar)
+var foo Foo
+fmt.Println(foo.items)
+fmt.Println(len(foo.items))
+fmt.Println(foo.items == nil)
+fmt.Println(foo.str)
+fmt.Println(foo.num)
+fmt.Println(foo.barPtr)
+fmt.Println(foo.bar)
 }
 ```
 
@@ -199,11 +199,11 @@ See the `TODO` sections in each of the test files.
 ---
 
 # Go Tips and FAQs
- - After the Tour of Go, use https://go.dev/doc/effective_go and https://gobyexample.com/
- - Use these commands:
+- After the Tour of Go, use https://go.dev/doc/effective_go and https://gobyexample.com/
+- Use these commands:
     - `go fmt`
     - `go mod tidy` cleans up the module dependencies.
     - `go test -race ...` turns on the Go race detector. Note that `-race` must come before any file name in the command.
     - `go vet` examines Go source code and reports suspicious constructs, such as Printf calls whose arguments do not align with the format string. Vet uses heuristics that do not guarantee all reports are genuine problems, but it can find errors not caught by the compilers.
- - `package testmain: cannot find package` error:
-   - Chances are the `GOPATH` env var is not set properly. Run these commands in the terminal: `export GOPATH=$HOME/go` and `export PATH=$PATH:$GOROOT/bin:$GOPATH/bin`. You can also add these to your `~/.bachrc` or `~/.zshrc`.
+- `package testmain: cannot find package` error:
+    - Chances are the `GOPATH` env var is not set properly. Run these commands in the terminal: `export GOPATH=$HOME/go` and `export PATH=$PATH:$GOROOT/bin:$GOPATH/bin`. You can also add these to your `~/.bachrc` or `~/.zshrc`.
