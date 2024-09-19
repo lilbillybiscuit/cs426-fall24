@@ -2,12 +2,11 @@ package lab0_test
 
 import (
 	"context"
-	"sync/atomic"
-	"testing"
-
 	"cs426.cloud/lab0"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"sync/atomic"
+	"testing"
 )
 
 type intQueue interface {
@@ -113,7 +112,8 @@ func runConcurrentQueueTests(t *testing.T, q *lab0.ConcurrentQueue[int]) {
 				return nil
 			})
 		}
-		eg.Wait()
+		err := eg.Wait()
+		require.NoError(t, err)
 
 		for i := 0; i < concurrency*pushes; i++ {
 			v, ok := q.Pop()
@@ -144,7 +144,9 @@ func runConcurrentQueueTests(t *testing.T, q *lab0.ConcurrentQueue[int]) {
 				return nil
 			})
 		}
-		eg.Wait()
+		err := eg.Wait()
+		require.NoError(t, err)
+
 		// In the end, we should have exactly concurrency * pushes/2 elements in popped
 		require.Equal(t, int64(concurrency*pushes/2), found)
 		// Mathematical SUM(i=0...7999)
