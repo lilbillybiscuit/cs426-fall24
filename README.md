@@ -7,17 +7,21 @@ See the guide [here](devenv/README.md).
 
 ## Labs
  - Lab 0: introduction to Go and concurrent programming (easy)
-   - [preview](lab0/lab0.md)
+   - [spec](lab0/lab0.md)
    - Due 23:59 ET Wed Sep 18, 2024
  - Lab 1: microservice (moderate)
-   - Due
+   - [spec](lab1/lab1.md)
+   - Due 23:59 ET Wed Sep 25, 2024
  - Lab 2: deployment and operations (easy)
-   - Due
+   - [initial version](lab2/lab2.md)
+   - Due 23:59 ET Wed Oct 2, 2024
  - Lab 3: Raft with static cluster membership (hard+)
    - Due
  - Lab 4: Sharded key-value cache (moderate)
    - Due
- - Lab 5: Final project
+ - Lab 5: Distributed machine learning
+   - Due
+ - Lab 6: Final project
    - [Requirements and ideas **from 2023 for reference**](https://docs.google.com/document/d/1J6Do0IPsnUsrfRx7VFjwPNFUSYVBA0BZ/edit)
    - Proposals due:
    - Final deliverables due: (Last day of final exam; you may not be able to use the discretionary hours as per Yale College's regulations.)
@@ -28,6 +32,7 @@ Post to Canvas/Ed (preferred) or email the teaching staff:
   - Xiao Shi (xiao.shi@yale.edu)
   - Scott Pruett (spruett345@gmail.com)
   - Bradley Lewis (bradley.lewis@yale.edu)
+  - Brian Choi (brian.choi@yale.edu)
 
 ## Tips on asking good questions / help us help you
 - First, try to find the answer(s) by Googling. See the [Collaboration Policy](collaboration_and_ai_policy.md) about rules re: code reuse and attribution.

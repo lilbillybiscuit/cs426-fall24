@@ -1,0 +1,40 @@
+FROM golang:1.23-alpine
+
+ARG USER=nonroot
+ENV HOME=/home/$USER
+
+# install sudo as root
+RUN apk add sudo
+
+# Install bash, git, and other packages
+RUN apk add --no-cache bash zsh git protobuf make curl vim emacs
+RUN apk add --no-cache gcc musl-dev libgcc
+RUN apk add --no-cache kubectl kubectx kubectl-bash-completion kubectx-bash-completion kubectl-zsh-completion kubectx-zsh-completion
+RUN apk add --no-cache docker-cli docker-cli-compose docker-cli-buildx docker-bash-completion docker-zsh-completion
+
+# add new user (ref: https://wiki.alpinelinux.org/wiki/Setting_up_a_new_user#Options)
+RUN adduser -D $USER \
+    && echo "$USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$USER \
+    && chmod 0440 /etc/sudoers.d/$USER
+
+USER $USER
+WORKDIR $HOME
+
+RUN sudo rm -rf ${HOME}/.cache
+
+# Install Go tools at specific version (Aug 2024)
+RUN go install golang.org/x/tools/cmd/godoc@v0.24.0
+RUN go install golang.org/x/tools/cmd/goimports@v0.24.0
+RUN go install golang.org/x/tools/gopls@v0.16.1
+RUN go install honnef.co/go/tools/cmd/staticcheck@v0.5.1
+
+# Install gRPC and protobuf plugins for Go (Aug 2024)
+RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1 \
+    && go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+
+ENV PATH="/usr/local/go/bin:${PATH}"
+RUN echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.profile
+
+# Build: `docker build -f Dockerfile.alpine -t my-dev-env .`
+# Start the container: `docker run -it -v myhomedir:/home/nonroot my-dev-env`
+CMD ["bash"]
