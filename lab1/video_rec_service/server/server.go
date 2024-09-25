@@ -56,6 +56,12 @@ func main() {
 		DisableFallback:  *disableFallback,
 		DisableRetry:     *disableRetry,
 	})
+	defer func(server *sl.VideoRecServiceServer) { // defer close
+		err := server.Close()
+		if err != nil {
+			log.Fatalf("failed to close server: %q", err)
+		}
+	}(server)
 	if err != nil {
 		log.Fatalf("failed to start server: %q", err)
 	}

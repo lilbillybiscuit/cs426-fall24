@@ -1,0 +1,161 @@
+# Discussions for Lab 1
+Name: Bill Qian
+
+## A1
+
+`NewClient` is similar to a combination of the `socket()` and `connect()` functions in the C-style socket API. It abstracts the process of creating a socket and establishing a connection, making it more user-friendly. Note that `socket()` creates a communication endpoint and `connect()` establishes a connection to a server, and `NewClient` just handles both tasks in a higher-level Go manner, with the option of additional configuration and error handling.
+
+## A2
+
+NewClient() might fail on the following conditions:
+- The server address is invalid or the server is not running.
+- The server is running but not accepting connections, or the connection is refused due to a firewall or other network configuration, or the connection queue is full.
+
+In these cases, the best value to return would be codes.Unavailable, because it indicates that the server is indeed unavailable one reason or another. It the most simple solution to the problem. We could be more specific like:
+```go
+if err != nil {
+    switch {
+    case strings.Contains(err.Error(), "context deadline exceeded"):
+        return nil, status.Errorf(codes.DeadlineExceeded, "VideoRecService: connection to UserService timed out: %v", err)
+    case strings.Contains(err.Error(), "no such host"):
+        return nil, status.Errorf(codes.InvalidArgument, "VideoRecService: invalid UserService address: %v", err)
+    default:
+        return nil, status.Errorf(codes.Unavailable, "VideoRecService: failed to connect to UserService: %v", err)
+    }
+}
+```
+
+but this approach is more complex and might make it too cumbersome to handle all the possible errors.
+
+The other time where an error could occur is during closing the client connections. We also use codes.Unavailable in this case because the connections are "unavailable" to close. It is the most simple and straightforward code to use.
+
+
+## A3
+
+When `GetUser()` is called, it first serializes the request into a byte slice, then using the already established connection, sends the request to the server. This would call the `send()/write()` (note not `sendto()` because we have established a TCP connection (HTTP/2)). Then, we would use `select()/poll()/epoll()` to wait for the socket to become readable. Once the socket is readable, we would read the response from the server using `recv()/read()`. Then, we would deserialize the response and return it to the caller.
+
+Now, let's list some potential error cases:
+- Network-related: Connection closed, server not running, broken pipe, connection timeouts/resets (due to congestion)
+  - Detected by OS when attempting to read/write socket
+  - Detected by TCP timeout (as a connection reset/read/write error)
+  - Detected through TCP congestion control algorithms
+- Protocol-related errors: malformed request/response, version mismatch, etc
+  - Detected during deserialization of Protobuf data (library will handle this)
+  - gRPC includes version information in protocol. Mismatches are detected during initial handshake between client/server
+- System errors: Out of file descriptors or memory
+  - Detected when system calls like socket() fail with EMFILE
+  - Detected when malloc fails
+- Application-level errors: Server side database errors, timeouts, etc
+  - Triggered by service-side events
+  - Timeouts detected using timer mechanisms in gRPC library (returns a DEADLINE_EXCEEDED) error
+- Client-level errors: Context canceled
+  - gRPC checks context state before each operation, returns CANCELLED error if aborted
+
+It's possible for GetUser to return errors when the network calls succeed, for example in the application-level errors (ex. user not found) or client-side ones. But the gRPC framework abstracts all of this away
+
+The last layer of error of handling relies on the HTTP/2 protoco, which provides stream-level and connection-level error detection, flow control, etc.
+
+## ExtraCredit1
+(Same as above)
+- Network-related: Connection closed, server not running, broken pipe, connection timeouts/resets (due to congestion)
+    - Detected by OS when attempting to read/write socket
+    - Detected by TCP timeout (as a connection reset/read/write error)
+    - Detected through TCP congestion control algorithms
+- Protocol-related errors: malformed request/response, version mismatch, etc
+    - Detected during deserialization of Protobuf data (library will handle this)
+    - gRPC includes version information in protocol. Mismatches are detected during initial handshake between client/server
+- System errors: Out of file descriptors or memory
+    - Detected when system calls like socket() fail with EMFILE
+    - Detected when malloc fails
+- Application-level errors: Server side database errors, timeouts, etc
+    - Triggered by service-side events
+    - Timeouts detected using timer mechanisms in gRPC library (returns a DEADLINE_EXCEEDED) error
+- Client-level errors: Context canceled
+    - gRPC checks context state before each operation, returns CANCELLED error if aborted
+
+## A4
+
+If we used the same connection for UserService and VideoService, first of all we would be assuming that UserService and VideoService as hosted at the same address, of which they are not. Second, we would be sending incorrectly serialized data (eg. UserService expects UserRequest over the connection, but it might recieve a VideoRequest) and not know what to do with it. 
+
+On a separate note, would also break the gRPC method identification system, violate type safety guaranteed by generated stubs, and potentially cause security vulnerabilities if services have different authentication requirements. 
+
+## A6
+Here is my output:
+```
+nonroot@distributed:~/cs426-fall24/lab1$ go run cmd/frontend/frontend.go --net-id=bnq3
+2024/09/24 17:22:26 Welcome bnq3! The UserId we picked for you is 203805.
+
+2024/09/24 17:22:26 This user has name Bashirian8120, their email is audreybeahan@yost.com, and their profile URL is https://user-service.localhost/profile/203805
+2024/09/24 17:22:26 Recommended videos:
+2024/09/24 17:22:26   [0] Video id=1052, title="grieving Snow Peas", author=Jevon Botsford, url=https://video-data.localhost/blob/1052
+2024/09/24 17:22:26   [1] Video id=1042, title="The purple yellowjacket's honesty", author=Terrence Schinner, url=https://video-data.localhost/blob/1042
+2024/09/24 17:22:26   [2] Video id=1212, title="Foxride: unlock", author=Estella Emmerich, url=https://video-data.localhost/blob/1212
+2024/09/24 17:22:26   [3] Video id=1334, title="GhostWhitescale: index", author=Heidi Shields, url=https://video-data.localhost/blob/1334
+2024/09/24 17:22:26   [4] Video id=1181, title="dizzying behind", author=Lacy McDermott, url=https://video-data.localhost/blob/1181
+2024/09/24 17:22:26 
+
+==== BASIC TESTS ====
+2024/09/24 17:22:26 Test case 1: UserId=204054
+2024/09/24 17:22:27 Recommended videos:
+2024/09/24 17:22:27   [0] Video id=1012, title="The eager ferret's punctuation", author=Rae Ziemann, url=https://video-data.localhost/blob/1012
+2024/09/24 17:22:27   [1] Video id=1312, title="The lazy frog's unemployment", author=Harry Boehm, url=https://video-data.localhost/blob/1312
+2024/09/24 17:22:27   [2] Video id=1209, title="Koalajump: compile", author=Amie Rau, url=https://video-data.localhost/blob/1209
+2024/09/24 17:22:27   [3] Video id=1309, title="gleaming Jicama", author=Ana Wunsch, url=https://video-data.localhost/blob/1309
+2024/09/24 17:22:27   [4] Video id=1079, title="precious here", author=George Morissette, url=https://video-data.localhost/blob/1079
+2024/09/24 17:22:27 Test case 2: UserId=203584
+2024/09/24 17:22:27 Recommended videos:
+2024/09/24 17:22:27   [0] Video id=1196, title="The orange gnu's heat", author=Dagmar Hauck, url=https://video-data.localhost/blob/1196
+2024/09/24 17:22:27   [1] Video id=1370, title="The hungry gerbil's safety", author=Rocky Okuneva, url=https://video-data.localhost/blob/1370
+2024/09/24 17:22:27   [2] Video id=1071, title="The worrisome sheep's courage", author=Kayley Moore, url=https://video-data.localhost/blob/1071
+2024/09/24 17:22:27   [3] Video id=1041, title="The kind hyena's unemployment", author=Layla Effertz, url=https://video-data.localhost/blob/1041
+2024/09/24 17:22:27   [4] Video id=1240, title="witty downstairs", author=Toni Johnson, url=https://video-data.localhost/blob/1240
+2024/09/24 17:22:27 OK: basic tests passed!
+```
+
+## A8
+There are many different factors that tell us whether we should send batched requests concurrently, from server capacity, API design, use case requirements, and server-side implementation. For example, if server capacity is nearly infinite, concurrent batched requests might be beneficial (note that this is rarely the case in practice one is a small provider querying Google). Second, many APIs are designed with specific batch limits to ensure fair resource allocation and manage server load, and we should generally respect the limits. Third, servers may already handle concurrency internally for batched requests, making client-side concurrency unnecessary or even counterproductive as it might overload the server and defeat the purpose of even offering a batch API in the first place.
+
+Of course, all of this depends on the nature of the operations being performed and the specific requirements of the application.
+
+Some pros and cons of each are as follows:
+
+Pros:
+
+1. We get **improved performance** from sending batched requests concurrently. I.e. we significantly reduce overall response time, especially when dealing with independent operations.
+
+2. Better **resource utilization** of available network and server resources, potentially improving throughput, and reducing the amount of waiting that has to happen per-thread.
+
+3. Reduced **latency** for time-sensitive applications, concurrent requests can provide faster results by parallelizing operations (since we are not waiting for operations to happen sequentially)
+
+Cons:
+1.	We risk **server overload** from sending batched requests concurrently. I.e. if not properly managed, concurrent requests might overwhelm the server, potentially leading to degraded performance or failures.
+2.	Increased **code complexity** for both client and server-side implementations. Implementing and managing concurrent requests adds complexity, which can lead to more difficult maintenance and debugging.
+3.	Higher chance of **race conditions** for interdependent operations. Concurrent operations may lead to unexpected behavior if not carefully designed, especially when dealing with data that relies on a specific order of operations.
+4.	Potential **violation of API design intent** if we bypass intended usage patterns. If the API was designed with specific batch limits to manage server load, using concurrent requests could be seen as circumventing these safeguards.
+
+## ExtraCredit2
+
+To minimize the total number of requests to VideoService and UserService given many requests, we can use a queueing system to ensure as many requests have BATCH_SIZE elements as possible. Here is an example of the components we would need:
+
+1. Create a queue for each service (UserService and VideoService) to hold incoming requests, adding requests to the appropriate queue when they come in
+
+2. Set up a background process that continuously monitors each queue, creating and sending batches of requests to the respective services.
+
+3. The batching logic will work as follows:
+  - The background process will check two conditions:
+    a. If the current batch has reached the maximum size (BATCH_SIZE=50).
+    b. If there are any requests in the batch and it's been waiting for longer than a set time limit (MAX_WAIT_TIME=probably 1 second).
+  - If either is true, send the current batch, and then process the results and send them back to the original requesters.
+
+4. While doing all of this, keep track of which requests in the batch correspond to which original function calls. This will allow us to return the correct results to the right callers. This operation runs continuously: if the queue isn't empty, keep moving requests from the queue into the current batch. If the queue is empty, wait for new requests to arrive or for the time limit to be reached.
+
+6. When a new recommendation request comes in, we
+    a. Add the user request to the UserService queue.
+    b. Add the video request to the VideoService queue.
+    c. Wait for both results to come back.
+    d. Use these results to generate the recommendation.
+
+
+Using this we significantly reduce the number of individual calls to UserService and VideoService. Instead of making a separate call for each user and video, we group these requests into batches, only sending requests when we have enough to fill a batch or when we've waited long enough. This results in fewer overall requests to these services, improving efficiency and reducing load on the system. However, note that this may increase latency for smaller request volumes, so we still have to balance between making efficient use of batching (by trying to fill batches) and maintaining responsiveness (by sending partially filled batches after a time limit).
+
+

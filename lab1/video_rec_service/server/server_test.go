@@ -72,3 +72,26 @@ func TestServerBasic(t *testing.T) {
 	)
 	assert.False(t, err == nil)
 }
+
+func setUpServer() *sl.VideoRecServiceServer {
+	vrOptions := sl.VideoRecServiceOptions{
+		MaxBatchSize:    50,
+		DisableFallback: true,
+		DisableRetry:    true,
+	}
+	uClient := umc.MakeMockUserServiceClient(*usl.DefaultUserServiceOptions())
+	vClient := vmc.MakeMockVideoServiceClient(*vsl.DefaultVideoServiceOptions())
+	vrService := sl.MakeVideoRecServiceServerWithMocks(
+		vrOptions,
+		uClient,
+		vClient,
+	)
+	return vrService
+}
+
+func TestServerBatching(t *testing.T) {
+	vrService := setUpServer()
+
+	var userId uint64 = 204054
+
+}
