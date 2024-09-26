@@ -1,0 +1,18 @@
+ESTIMATE of time to complete assignment: 7 hours
+
+      Time     Time
+Date  Started  Spent Work completed
+----  -------  ----  --------------
+9/23   11:00pm 0:30  read assignment, planned out strategy
+9/24   11:00am 1:20  started A1-A4, learning gRPC
+9/24   9:45pm  2:15  completed A
+9/25   4:00pm  2:30  complete part B, C1
+9/25   9:00pm  2:30  complete part C, write unit test cases, finish log and submit
+               ----
+               9:05  TOTAL time spent
+
+I did not discuss my solutions with anyone. I used ChatGPT to help me understand concepts in Go, and debugging, but not to write anything from scratch.
+
+This pset was a bit tedious. I learned a lot about gRPC and how to use it in Go. The hardest part was figuring out the structure of the code and planning out the implementation; once that was complete, the assignment could be broken down easily. I also looked a bit ahead and noticed that we could keep one single connection before we got to Part B. The logic about GetStats was completed using just atomic integers, and I used RWMutex for keeping track of the data.
+
+The most tedious part was the unit testing, and coming up with relevant edge cases.

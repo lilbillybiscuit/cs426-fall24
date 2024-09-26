@@ -159,3 +159,137 @@ To minimize the total number of requests to VideoService and UserService given m
 Using this we significantly reduce the number of individual calls to UserService and VideoService. Instead of making a separate call for each user and video, we group these requests into batches, only sending requests when we have enough to fill a batch or when we've waited long enough. This results in fewer overall requests to these services, improving efficiency and reducing load on the system. However, note that this may increase latency for smaller request volumes, so we still have to balance between making efficient use of batching (by trying to fill batches) and maintaining responsiveness (by sending partially filled batches after a time limit).
 
 
+## B2
+My results with 10 qps is as follows (running on an M1 Max Macbook Pro under Ubuntu 22.04 with the Virtualization framework):
+
+<details>
+<summary>Latency Chart</summary>
+<pre><code>
+nonroot@distributed:~/cs426-fall24/lab1$ go run cmd/stats/stats.go 
+now_us  total_requests  total_errors    active_requests user_service_errors     video_service_errors    average_latency_ms      p99_latency_ms  stale_responses
+1727294340093346        0       0       0       0       0       0.00    0.00    0
+1727294341095486        0       0       0       0       0       0.00    0.00    0
+1727294342096533        0       0       0       0       0       0.00    0.00    0
+1727294343103252        0       0       0       0       0       0.00    0.00    0
+1727294344095682        13      0       1       0       0       144.17  214.00  0
+1727294345094267        23      0       0       0       0       110.26  214.00  0
+1727294346096385        33      0       1       0       0       97.25   214.00  0
+1727294347094656        43      0       1       0       0       98.26   214.00  0
+1727294348094527        53      0       1       0       0       105.13  213.86  0
+1727294349096086        63      0       1       0       0       104.31  213.16  0
+1727294350097902        73      0       1       0       0       106.56  212.46  0
+1727294351094938        83      0       1       0       0       103.66  211.76  0
+1727294352096365        93      0       1       0       0       106.43  211.06  0
+1727294353096955        103     0       1       0       0       107.23  210.36  0
+1727294354096237        113     0       1       0       0       108.48  209.66  0
+1727294355094887        123     0       1       0       0       107.28  208.96  0
+1727294356094384        133     0       1       0       0       108.92  208.26  0
+1727294357096388        143     0       1       0       0       109.43  207.56  0
+1727294358095334        153     0       1       0       0       109.76  206.34  0
+1727294359094713        163     0       1       0       0       111.00  203.04  0
+1727294360094422        173     0       0       0       0       110.47  199.41  0
+1727294361094230        183     0       1       0       0       107.46  196.44  0
+1727294362095180        193     0       0       0       0       106.72  192.81  0
+</code></pre>
+</details>
+
+<details>
+<summary>And after running 100 qps</summary>
+<pre><code>
+now_us  total_requests  total_errors    active_requests user_service_errors     video_service_errors    average_latency_ms      p99_latency_ms  stale_responses
+...
+1727294363100787        198     0       0       0       0       105.53  191.16  0
+1727294364095389        198     0       0       0       0       105.53  191.16  0
+1727294365095191        198     0       0       0       0       105.53  191.16  0
+1727294366109653        324     0       113     0       0       112.09  270.99  0
+1727294367209053        431     0       165     0       0       253.06  1300.36 0
+1727294368118998        528     0       184     0       0       587.35  2262.18 0
+1727294369153394        629     0       192     0       0       878.78  2545.95 0
+1727294370206484        733     0       217     0       0       1038.67 2699.38 0
+1727294371105813        831     0       240     0       0       1205.23 2802.36 0
+1727294372343736        930     0       300     0       0       1295.68 2869.20 0
+1727294373274811        1032    0       346     0       0       1451.32 3687.40 0
+</code></pre>
+</details>
+
+
+
+## C1
+
+Retrying can be a bad option because it can add unnecessary server load for requests known to fail. For example, the following errors probably shouldn't be retried:
+-   4xx Client Errors: These indicate issues with the request itself. Common ones include:
+- InvalidArgument: invalid request parameters.
+- Unauthenticated: authentication required.
+- PermissionDenied: permission denied.
+- NotFound: resource not found.
+-   5xx Server Errors that indicate issues that won't resolve with retries:
+- Unimplemented: Method not supported.
+- Internal: Internal server error.
+- Unavailable: Server overloaded or down.
+- DeadlineExceeded: Request timeout.
+
+In all of these cases, the probability of retrying fixing something is nearly zero. For the application errors, it is intended behavior. For the server errors, the issue might not be fixed in a timely manner.
+
+Another potential reason is running past rate limits. Retrying too soon after a ResourceExhausted error can worsen throttling.
+
+Finally, retrying might send duplicate requests, such as making a duplicate purchase (might have got to the order succeeded stage, but something went wrong after that)
+
+## C2
+We have two main options: we can return an error, or we could return the expired data anyways.
+
+If we return expired responses, the pros are:
+- Better user experience since users get some recommendations instead of an error
+- Maintains service continuity
+- High resilience due to perception of reliability
+Cons:
+- Recommendations might be outdated.
+- Content may not be as relevant.
+- Users might notice and lose trust in the system.
+
+If we return errors, the pros are:
+- Ensures only up-to-date content is shown
+- Clearly indicates issues to users and doesn't lie
+- Simplifies logic by avoiding stale data management
+Cons:
+- Errors can frustrate users.
+- Frequent errors can make the service seem unreliable.
+- Users might disengage due to errors.
+
+In this context, the best option, as stated in the spec, is to return the expired list of videos anyways. It is better for the user to receive something rather than nothing, even if it's the same. We can hope that the server will be back up in a short time.
+
+
+## C3
+One additional strategy we can implement is bringing the cache to a per-request level. We implement a local cache in VideoRecService that stores recent results from UserService and VideoService, and use this to serve requests when the services are unavailable.
+
+Note that this only works because we are expecting users and videos to not change that much over time; people don't constantly edit their videos every few seconds. Therefore, it's particularly effective for users with relatively stable preferences and for popular videos that don't change frequently. The tradeoff of potentially outdated information is outweighed by the benefit of maintaining service availability during outages.
+
+A rough sketch is as follows:
+- Store user subscriptions, liked videos, and video metadata in memory
+- Set a reasonable expiration time for cached data (eg a minute maybe)
+- Update cache entries on successful service calls
+- Serve from cache if primary service calls fail
+
+This is good because it
+- Reduces latency for frequent requests, as we can always fallback to cache
+- Improved availability during service outages, as we still get accurate and somewhat personalized results even when the servers are down 
+- Decreased load on dependent services
+Cons:
+- Increased memory usage in VideoRecService
+- Potential for slightly outdated data
+- Added complexity in managing cache consistency
+
+
+## C4
+I implemented the connection within the VideoRecServiceServer struct from the very start, and initialized the connection within the `MakeVideoRecServiceServer` function. Therefore, I did not create a new `Dial` or `NewClient` on every request. However, connection establishment is costly because
+- each connection temporarily binds a port and ports are limited resources. Connections also use other resources such as memory, CPU, OS threads, etc.
+- there is a lot of overhead in performing the SSL/TLS handshake, among other initialization steps
+
+My implementation already avoids this by creating one client connection per service when the entire server is created, and reuses it on every connection. This leads to better resource utilization and lower latency, important for high-throughput services. In the future, we might implement things like connection pools or other mechanisms to increase the bandwidth and allow for a larger pipe.
+
+However, there are trade-offs. For example, for load balancing, if a single connection is reused, it may not distribute the load evenly across multiple servers. We could implement connection pools or use a load balancer in front of the services can help mitigate this issue.
+
+Some other trade-offs include:
+-  Complexity for managing idle connections and their lifecycle
+-  Connection pools must be sized correctly to avoid bottlenecks during traffic spikes
+- a single point of failure when few connections are used, so we might need to add more robust recovery mechanisms.
+- Higher latency for new connections, and managing a pool to keep connections ready is challenging.t
