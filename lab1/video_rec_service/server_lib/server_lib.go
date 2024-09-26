@@ -252,10 +252,13 @@ func MakeVideoRecServiceServerWithMocks(
 		return nil
 	}
 	return &VideoRecServiceServer{
-		options: options,
-		// ...
+		options:            options,
 		UserServiceClient:  mockUserServiceClient,
 		VideoServiceClient: mockVideoServiceClient,
+		stats: Stats{
+			latencyDigest: tdigest.NewWithCompression(1000),
+		},
+		trendingVideo: &TrendingVideoCache{},
 	}
 }
 
@@ -299,7 +302,7 @@ func (server *VideoRecServiceServer) getUserWithRetry(
 		if err == nil {
 			return result, nil
 		}
-		log.Printf("Error when calling GetUser: %s, retrying", err)
+		log.Printf("Error when calling GetUser: %s, retrying. (Attempt %d of %d)", err, i+1, maxRetries)
 	}
 	return nil, err
 
@@ -321,7 +324,7 @@ func (server *VideoRecServiceServer) getVideoWithRetry(
 		if err == nil {
 			return result, nil
 		}
-		log.Printf("Error when calling GetVideo: %s, retrying", err)
+		log.Printf("Error when calling GetVideo: %s, retrying. (Attempt %d of %d)", err, i+1, maxRetries)
 	}
 	return nil, err
 
