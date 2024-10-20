@@ -1,0 +1,14 @@
+# Time logging
+
+ESTIMATE of time to complete assignment: 4 hours
+
+      Time     Time
+Date  Started  Spent Work completed
+----  -------  ----  --------------
+10/2   12:00am 1:00  read assignment and set up docker environment (had to move to macOS instead of Linux VM)
+10/4   3:00pm  2:00  finished deployment, fixed bugs, made connection pool
+10/4   11:00pm 1:00  wrote discussion and time log reflection
+               ----
+               4:00  TOTAL time spent
+
+For this lab the most confusing thing was figuring out how Rosetta worked in a Linux VM (it didn't). I had to re-set up my Docker environment on macOS which took a while. The kubernetes and docker deployments were otherwise relatively painless after figuring out how to build cross-platform images correctly. Refactoring my code to support connection pools was interesting, mostly because I had already completed the connection reuse step from lab 1 and my code required minimal changes. The last part (C3) I could only notice something when I re-ran the load request many times, because the effects of going from 4 to 8 simultaneous connections on an 2-replica system was not too noticable otherwise.

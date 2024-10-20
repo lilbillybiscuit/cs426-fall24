@@ -1,0 +1,9 @@
+apiVersion: cs426.cloud/v1
+kind: LoadgenRequest
+metadata:
+  name: bnq3-loadgen-1-c2-4
+spec:
+  service_name: video-rec
+  target_qps: 20
+  duration_s: 20
+  max_outstanding: 10
