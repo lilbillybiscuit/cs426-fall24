@@ -13,10 +13,11 @@ See the guide [here](devenv/README.md).
    - [spec](lab1/lab1.md)
    - Due 23:59 ET Wed Sep 25, 2024
  - Lab 2: deployment and operations (easy)
-   - [initial version](lab2/lab2.md)
-   - Due 23:59 ET Wed Oct 2, 2024
+   - [spec](lab2/lab2.md)
+   - Due 23:59 ET Fri Oct 4~~Wed Oct 2~~, 2024
  - Lab 3: Raft with static cluster membership (hard+)
-   - Due
+   - Portion 1 (3A tests up to and **including** `TestBasicAgreement3B`) due: 23:59 ET Fri Oct 11, 2024
+   - Entire lab due: 23:59 ET Wed Oct 30, 2024
  - Lab 4: Sharded key-value cache (moderate)
    - Due
  - Lab 5: Distributed machine learning

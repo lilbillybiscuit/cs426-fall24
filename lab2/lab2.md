@@ -19,7 +19,8 @@ with the cluster or shared tooling please reach out to us via Ed or email.
 
 - Questions? post to [Ed](https://edstem.org/us/courses/65981/discussion/) or email the teaching staff at cs426ta@cs.yale.edu.
 
-**Submission deadline: 23:59 ET Wednesday Oct 2, 2024**
+**Submission deadline: 23:59 ET Friday Oct 4 ~~Wednesday Oct 2~~, 2024**
+
 
 **Submission logistics**
 Submit a `.tar.gz` archive named after your NetID via
@@ -57,7 +58,7 @@ KUBECONFIG=configs/sp2432.kubecfg kubectl get secret
 ```
 or
 ```
-kubectl --kubeconfig=configs/sp2432.kubecfg kubectl secret
+kubectl --kubeconfig=configs/sp2432.kubecfg get secret
 ```
 
 Or set an environment variable for your current bash session (need to do this every time you open a new shell):
@@ -475,7 +476,7 @@ Other notes:
 
 ## Part C. Connection management and pooling
 
-In Lab 1, you like issued separate `Dial` calls each time a `GetTopVideos` request hit your service. This was simple but likely inefficient: gRPC allows
+In Lab 1, you like issued separate `NewClient` calls each time a `GetTopVideos` request hit your service. This was simple but likely inefficient: gRPC allows
 a single `ClientConn` to make multiple potentially concurrent multiplexed
 RPCs.
 
@@ -494,13 +495,13 @@ To start, we'll reuse a single `ClientConn`. Add some members to your
 `VideoRecServiceServer struct` to contain your `ClientConn*`s for `UserService`
 and `VideoService`. Alternatively, you can store `UserServiceClient`/`VideoServiceClient`s directly.
 
-You'll need to initialize these in some way. Modify your `MakeVideoRecServiceServer` function to initialize these using `Dial()`
+You'll need to initialize these in some way. Modify your `MakeVideoRecServiceServer` function to initialize these using `NewClient()`
 initially.
 
-Note that `Dial` can still fail, just not in the ways you may think if you assume it starts connections. By default `Dial` does not block for connections, it will continue with reconnects in the background, and therefore won't fail even if a connection cannot be made. It can still fail pre-validations for things like invalid addresses or invalid TLS credentials. You can assume that these will be fatal. To handle these errors:
+Note that `NewClient` calls can still fail, just not in the ways you may think if you assume it starts connections. You can read its source code [here](https://github.com/grpc/grpc-go/blob/9affdbb28e4be9c971fadfb06fb89866863ef634/clientconn.go#L131). By default `NewClient` does not block for connections and a connection is created lazily on the first RPC call. Therefore it won't fail even if a connection cannot be made. It can still fail pre-validations for things like invalid addresses or invalid TLS credentials. You can assume that these will be fatal. To handle these errors:
 
  1. Modify the return of `MakeVideoRecServiceServer` to return `(*VideoRecServiceServer, err)`.
- 2. Return `err`s if `grpc.Dial()` fails
+ 2. Return `err`s if `grpc.NewClient()` fails
  3. Modify `main()` in `server.go` to handle these errors. You can use `log.Fatalf` to end the program in this case, assuming the errors are not transient.
 
 Your `VideoRecServiceServer` should now have permanent clients stored that
@@ -510,7 +511,7 @@ If you've already done this step (or similar) from Lab 1 that's great! Move on t
 
 ### C2. Observing the results of a single connection
 
-Now that your service is not repeatedly calling `Dial()` you likely
+Now that your service is not repeatedly calling `NewClient()` you likely
 are using a single TCP connection under the hood to make all of your
 outgoing calls to `UserService`/`VideoService`. In most cases this is fine,
 but when running in the cluster `UserService`/`VideoService` are effectively
@@ -546,7 +547,7 @@ and `MakeVideoRecServiceServer` but instead of storing a single `ClientConn*` (o
 
  1. Add a flag to `server.go` near the other flags like `--port` called `--client-pool-size` as a `flag.Int`. You can set the default to `4`.
  2. Add an `int` for `clientPoolSize` to `VideoRecServiceOptions` in `server_lib.go`, and set its value from the above flag in `main()` in `server.go` like the others.
- 3. Initialize the slice with `clientPoolSize` number of connections for each service in `MakeVideoRecServiceServer`, calling `Dial` that many separate times for each service to initialize. If any fail, return the error back from `MakeVideoRecService.`
+ 3. Initialize the slice with `clientPoolSize` number of connections for each service in `MakeVideoRecServiceServer`, calling `NewClient` that many separate times for each service to initialize. If any fail, return the error back from `MakeVideoRecService.`
 
 You will employ a trivial load-balancing strategy to decide which client to use: round robin.
 Round robin balancing effectively spreads out the load among the potential clients to use by
