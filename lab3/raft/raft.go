@@ -18,6 +18,7 @@ package raft
 //
 
 import (
+	"fmt"
 	"math/rand"
 	//	"bytes"
 	"sync"
@@ -145,30 +146,41 @@ func (rf *Raft) ShouldStartElection() bool {
 }
 
 func (rf *Raft) resetElectionTimeout() {
-	rf.validRequest <- struct{}{}
+	select {
+	case rf.validRequest <- struct{}{}:
+	default:
+		// Channel is full, no need to reset
+	}
 	rf.lastHeartbeat = time.Now()
 	rf.electionTimeout = time.Duration(rand.Intn(int(MaxElectionTimeout-MinElectionTimeout)) + int(MinElectionTimeout))
 }
 
+func (rf *Raft) getLastLogIndex() int {
+	return len(rf.log) - 1
+}
 func (rf *Raft) StartElection() {
 	rf.mu.Lock()
 	if rf.state != CANDIDATE {
 		rf.mu.Unlock()
 		return
 	}
-	//var votesReceived atomic.Int32
-	//votesReceived.Add(1)
-	votesReceived := 1
+	var votesReceived atomic.Int32
+	votesReceived.Add(1)
 
-	println("Starting election for term ", rf.currentTerm, " as candidate ", rf.me)
-
-	requestArgs := RequestVoteArgs{
-		Term:         rf.currentTerm,
-		CandidateId:  rf.me,
-		LastLogIndex: len(rf.log),
-		LastLogTerm:  rf.log[len(rf.log)-1].Term,
-	}
+	//fmt.Printf("[Term %d][Node %d] Starting election 🗳️\n", rf.currentTerm, rf.me)
+	rf.debugLog(fmt.Sprintf("Starting election 🗳️"))
+	currentTerm := rf.currentTerm
+	candidateId := rf.me
+	lastLogIndex := rf.getLastLogIndex()
+	lastLogTerm := rf.log[len(rf.log)-1].Term
 	rf.mu.Unlock()
+	requestArgs := RequestVoteArgs{
+		Term:         currentTerm,
+		CandidateId:  candidateId,
+		LastLogIndex: lastLogIndex,
+		LastLogTerm:  lastLogTerm,
+	}
+
 	for peer := range rf.peers {
 		if peer != rf.me {
 			go func(peer int) {
@@ -177,12 +189,16 @@ func (rf *Raft) StartElection() {
 				if res {
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
-					println("RequestVote to ", peer, " for term ", rf.currentTerm, " returned ", requestReply.VoteGranted)
-
+					if rf.currentTerm != currentTerm || rf.state != CANDIDATE {
+						return // term has changed or no longer a candidate
+					}
+					//fmt.Printf("[Term %d][Node %d] RequestVote to %d returned %t\n", rf.currentTerm, rf.me, peer, requestReply.VoteGranted)
+					rf.debugLog(fmt.Sprintf("RequestVote to %d returned %t", peer, requestReply.VoteGranted))
 					if requestReply.VoteGranted {
-						votesReceived++
-						if votesReceived > len(rf.peers)/2 {
-							println("Node ", rf.me, " has won the election for term ", rf.currentTerm)
+						votesReceived.Add(1)
+						if int(votesReceived.Load()) > len(rf.peers)/2 {
+							//fmt.Printf("[Term %d][Node %d] Node \033[1m%d\033[0m has won the election for term %d\n", rf.currentTerm, rf.me, rf.me, rf.currentTerm)
+							rf.debugLog(fmt.Sprintf("Node \033[1m%d\033[0m has won the election for term %d", rf.me, rf.currentTerm))
 							rf.makeLeader()
 						}
 					} else if requestReply.Term > rf.currentTerm {
@@ -238,33 +254,42 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (3A, 3B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	rf.resetElectionTimeout()
+
+	rf.debugLog(fmt.Sprintf("RequestVote from %d. Request on term %d", args.CandidateId, args.Term))
+	reply.Term = rf.currentTerm
 
 	// check if term < currentTerm -> indicates lagging behind
 	if args.Term < rf.currentTerm {
-		reply.Term = rf.currentTerm
+		//fmt.Printf("[args.")
+		reply.VoteGranted = false
+		return
+	} else if args.Term > rf.currentTerm {
+		if rf.state != FOLLOWER {
+			rf.makeFollower(args.Term)
+		}
+		rf.currentTerm = args.Term
+		reply.VoteGranted = true
+		return
+	} else {
+		// equals
 		reply.VoteGranted = false
 		return
 	}
 
-	println("Log up to date? ", rf.isLogUpToDate(args.LastLogIndex, args.LastLogTerm))
-	println("Voted for ", rf.votedFor, " and candidate is ", args.CandidateId)
-	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && rf.isLogUpToDate(args.LastLogIndex, args.LastLogTerm) {
-		reply.Term = rf.currentTerm
-		reply.VoteGranted = true
-		rf.votedFor = args.CandidateId
-		rf.resetElectionTimeout()
-		return
-	}
+	//if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && rf.isLogUpToDate(args.LastLogIndex, args.LastLogTerm) {
+	//	reply.Term = rf.currentTerm
+	//	reply.VoteGranted = true
+	//	rf.votedFor = args.CandidateId
+	//	rf.resetElectionTimeout()
+	//	return
+	//}
 
 	// TODO: maybe check if candidate term is greater than current term -> indicates this server is lagging behind and we should make it a follower
-	if args.Term > rf.currentTerm {
-		rf.currentTerm = args.Term
-		rf.makeFollower(args.Term)
-		return
-	}
 
-	reply.VoteGranted = true
-	return
+	//fmt.Printf("[Term %d][Node %d] Voted for %d and candidate is %d\n", rf.currentTerm, rf.me, rf.votedFor, args.CandidateId)
+	//
+	//return
 }
 
 // example code to send a RequestVote RPC to a server.
@@ -313,20 +338,26 @@ type AppendEntriesReply struct {
 	Success bool
 }
 
+func (rf *Raft) debugLog(s string) {
+	return
+	fmt.Printf("[Term %d][Node %d] %s", rf.currentTerm, rf.me, s)
+}
+
 // should only be called as a follower
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	//fmt.Printf("[Term %d][Node %d] AppendEntries from %d, at term %d\n", rf.currentTerm, rf.me, args.LeaderId, args.Term)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	// reset the election timeout bc we saw some heartbeat from the server
 	rf.resetElectionTimeout()
-
+	rf.debugLog(fmt.Sprintf("AFTER LOCK AppendEntries from %d, at term %d\n", args.LeaderId, args.Term))
 	reply.Term = rf.currentTerm
 
-	if args.Term < rf.currentTerm {
+	if args.Term < rf.currentTerm { // Input term < current term, means requester is behind
 		reply.Success = false
 		return
-	} else if args.Term >= rf.currentTerm {
-		if rf.state != FOLLOWER {
+	} else if args.Term >= rf.currentTerm { // -----H-------
+		if rf.state != FOLLOWER { // -----HERE or later
 			rf.makeFollower(args.Term)
 		} else {
 			rf.currentTerm = args.Term
@@ -334,7 +365,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		}
 		reply.Success = true
 	}
-
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
@@ -386,13 +416,15 @@ func (rf *Raft) killed() bool {
 
 func (rf *Raft) makeCandidate() {
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	//if rf.state == LEADER {
+	//	return
+	//}
 	rf.resetElectionTimeout()
 	rf.state = CANDIDATE
 	rf.currentTerm++
 	rf.votedFor = rf.me
 	//rf.totalVotes = 1
-
+	rf.mu.Unlock()
 	go rf.StartElection()
 }
 
@@ -408,9 +440,11 @@ func (rf *Raft) makeLeader() {
 	if rf.state != CANDIDATE {
 		return
 	}
+	rf.resetElectionTimeout()
 	rf.state = LEADER
 	rf.nextIndex = make([]int, len(rf.peers))
-	println("Server ", rf.me, " is now the leader for term ", rf.currentTerm)
+	rf.debugLog(fmt.Sprintf("is now the leader"))
+
 	//for i := range rf.peers {
 	//	rf.nextIndex[i] = len(rf.log)
 	//	rf.matchIndex[i] = 0
@@ -432,7 +466,8 @@ func (rf *Raft) leaderAppendEntries() {
 		LeaderId: rf.me,
 	}
 	rf.mu.Unlock()
-	println("Node ", rf.me, " is sending heartbeats for term ", rf.currentTerm)
+	//println("Node ", rf.me, " is sending heartbeats for term ", rf.currentTerm)
+	rf.debugLog(fmt.Sprintf("Sending heartbeats❤️❤️ of length %d", len(rf.peers)-1))
 
 	for peer := range rf.peers {
 		if peer != rf.me {
@@ -443,10 +478,10 @@ func (rf *Raft) leaderAppendEntries() {
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
 					if reply.Term > rf.currentTerm {
+						rf.debugLog(fmt.Sprintf("Making %d a follower due to lagged term", peer))
 						rf.makeFollower(reply.Term)
 					}
 				}
-
 			}(peer)
 		}
 	}
@@ -460,7 +495,8 @@ func (rf *Raft) ticker() {
 		state := rf.state
 		rf.mu.Unlock()
 
-		delayTime := time.Duration(rand.Intn(200)+150) * time.Millisecond
+		//delayTime := time.Duration(rand.Intn(MaxElectionTimeout - MinElectionTimeout)+MinElectionTimeout) * time.Millisecond
+		delayTime := time.Duration(rand.Intn(int(MaxElectionTimeout-MinElectionTimeout)) + int(MinElectionTimeout))
 		switch state {
 		case FOLLOWER, CANDIDATE:
 			{
@@ -470,7 +506,6 @@ func (rf *Raft) ticker() {
 				case <-time.After(delayTime):
 					rf.makeCandidate()
 				}
-
 			}
 		case LEADER:
 			{
