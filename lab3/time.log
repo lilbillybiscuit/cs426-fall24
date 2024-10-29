@@ -1,0 +1,20 @@
+ESTIMATE of time to complete assignment: 10 hours
+
+      Time     Time
+Date  Started  Spent Work completed
+----  -------  ----  --------------
+10/16  11:00pm 0:30  read assignment, took a trip to the ER
+10/20  11:00pm 1:30  read through Raft paper, planned strategy
+10/21  11:00am 2:00  Implemented 3A + debugging
+10/22   2:00pm 1:00  Implemented 3B
+10/22   5:00pm 6:00  Debugging 3B (changed like 20 lines total :/)
+               ----
+               11:00  TOTAL time spent
+
+I did not discuss my solutions with anyone. I used ChatGPT to help me understand concepts in Go and Raft, and debugging, but not to write anything from scratch.
+
+This pset required a great deal of planning in order for things to go smoothly. I implemented Raft using somewhat of a state-machine like structure, compartmentalizing things whenever possible (like splitting the ticker goroutine into one for leader and one for other states), and made as many helper functions as possible to easily explain what each part of the code does.
+
+The most tedious part of this pset was, hands down, debugging. Although I got the []. I ended up creating a function called rf.debugLog that would print out key state information along with every print statement, sort of like how it is done in systems like dmesg. A lot of debugging with the Go debugger, colored text, etc. later, I ended creating some of my own systems to help me debug, and may be useful in the future.
+
+On a side note, in the middle of doing this problem set I had a bad accident with my right middle finger, and had to go to the ER. Therefore, I was doing this problem set without a right middle finger :shrug:

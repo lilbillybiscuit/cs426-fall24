@@ -22,3 +22,9 @@ This is not a major concern because Raft's design takes into account elements of
 
 
 ## ExtraCredit1
+The scenario above would not resolve with implementing Pre-Vote and CheckQuorum mechanisms. Note that Pre-Vote is a mechanism that involves a trial election phase where a candidate tests if it can win before actually incrementing its term, which helps avoid unnecessary term increments and reduces disruption from isolated nodes. CheckQuorum ensures that a leader steps down if it loses connectivity with a majority of the cluster, facilitating the election of a new leader.
+
+Now, even with these mechanisms, certain network partition scenarios can still cause liveness issues. For instance, in the scenario where multiple nodes start elections simultaneously due to synchronized timeouts, Pre-Vote does not inherently prevent this situation. If all nodes have the same election timeout and they all decide to start an election at the same time, they will still initiate Pre-Vote phases simultaneously, leading to the same issue of vote splitting, as each node will still seek votes from others without any staggered timing to differentiate their attempts.
+
+Additionally, note that CheckQuorum addresses issues of connectivity rather than timing. It ensures that a leader is connected to a majority but does not inherently stagger election attempts among candidates that start elections at the same time with identical timeouts.
+

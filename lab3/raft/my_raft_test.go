@@ -1,5 +1,10 @@
 package raft
 
+import (
+	"testing"
+	"time"
+)
+
 //
 // Raft tests.
 //
@@ -7,9 +12,6 @@ package raft
 // so, while you can modify this code to help you debug, please
 // test with the original before submitting.
 //
-
-import "testing"
-import "time"
 
 // The tester generously allows solutions to complete elections in one second
 // (much more than the paper's range of timeouts).
@@ -25,14 +27,14 @@ func TestLeaderCrashAndRecover3A(t *testing.T) {
 
 	// simulate leader crash
 	cfg.disconnect(leader1)
-	println("Leader crashed: ", leader1)
+	println("Leader crashed: ", leader1, time.Now().UnixNano()/1e6)
 
 	// new leader should be elected
 	cfg.checkOneLeader()
-
+	println("Recovering Leader", leader1)
 	cfg.connect(leader1)
 	println("Leader recovered: ", leader1)
-
+	time.Sleep(300 * time.Millisecond)
 	cfg.checkOneLeader()
 
 	cfg.end()
