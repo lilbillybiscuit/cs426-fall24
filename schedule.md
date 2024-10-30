@@ -91,7 +91,7 @@
 
 ## Week 9
 ### Tuesday, Oct 29
-- **Topic:** Database primer, transactions, ACID
+- **Topic:** Distributed transaction commit, database primer
 - **Preparation:** Read [Linearizability vs. Serializability](http://www.bailis.org/blog/linearizability-versus-serializability/)
 
 ### Wednesday, Oct 30
@@ -99,24 +99,24 @@
 - Final project requirements released
 
 ### Thursday, Oct 31
-- **Topic:** Distributed transactions
+- **Topic:** Database primer, concurrency control
 - **Preparation:** Read the [Spanner paper](https://static.googleusercontent.com/media/research.google.com/en//archive/spanner-osdi2012.pdf)
 
 ## Week 10
 ### Tuesday, Nov 5
-- **Topic:** Ordering and consistency 1
-- **Preparation:** Read [Dynamo](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf) and [FlightTracker](https://www.usenix.org/system/files/osdi20-shi.pdf)
+- **Topic:** Introduction to Distributed Machine Learning
 
 ### Wednesday, Nov 6
 - **Due:** Lab 4 due
 
 ### Thursday, Nov 7
-- **Topic:** Ordering and consistency 2
+- **Topic:** Ordering and consistency 1; Spanner
 
 # Distributed Systems in the Wild
 ## Week 11
 ### Tuesday, Nov 12
-- **Topic:** Distributed machine learning (DSML) 1
+- **Topic:** Ordering and Consistency 2; Dynamo and FlightTracker
+- **Preparation:** Read [Dynamo](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf) and [FlightTracker](https://www.usenix.org/system/files/osdi20-shi.pdf)
 
 ### Wednesday, Nov 13
 - **Due:** Final project (Lab 5) proposal due
