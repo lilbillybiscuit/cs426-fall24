@@ -131,7 +131,6 @@ func TestBasicAgree3B(t *testing.T) {
 	defer cfg.cleanup()
 
 	cfg.begin("Test (3B): basic agreement")
-
 	iters := 3
 	for index := 1; index < iters+1; index++ {
 		nd, _ := cfg.nCommitted(index)
@@ -193,6 +192,7 @@ func TestFailAgree3B(t *testing.T) {
 	// disconnect one follower from the network.
 	leader := cfg.checkOneLeader()
 	cfg.disconnect((leader + 1) % servers)
+	println("Disconnected node", (leader+1)%servers)
 
 	// the leader and remaining follower should be
 	// able to agree despite the disconnected follower.
