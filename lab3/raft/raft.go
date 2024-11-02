@@ -23,8 +23,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"sort"
-
 	//	"bytes"
 	"sync"
 	"sync/atomic"
@@ -727,21 +725,21 @@ func (rf *Raft) leaderAppendEntries() {
 					rf.updateCommitIndexes(peer)
 					return
 				} else { // decrement nextIndex and retry.
-					tarIndex := reply.ConflictingIndex //If it does not find an entry with that term
+					lastIndex := reply.ConflictingIndex
+
 					if reply.ConflictingTerm != -1 {
-						logSize := len(rf.log)         //first search its log for conflictTerm
-						for i := 0; i < logSize; i++ { //if it finds an entry in its log with that term,
-							if rf.log[i].Term != reply.ConflictingTerm {
-								continue
+						for i := 0; i < len(rf.log); i++ {
+							if rf.log[i].Term == reply.ConflictingTerm {
+								for i < len(rf.log) && rf.log[i].Term == reply.ConflictingTerm {
+									i++
+								}
+								lastIndex = i
+								break
 							}
-							for i < logSize && rf.log[i].Term == reply.ConflictingTerm {
-								i++
-							} //set nextIndex to be the one
-							tarIndex = i //beyond the index of the last entry in that term in its log
 						}
 					}
-					rf.nextIndex[peer] = tarIndex
-					return
+
+					rf.nextIndex[peer] = lastIndex
 				}
 
 			}
@@ -754,29 +752,19 @@ func (rf *Raft) updateCommitIndexes(peer int) {
 	rf.debugLog("COMMIT INDEXES UPDATED for peer %d", peer)
 	rf.matchIndex[rf.me] = len(rf.log) - 1
 
-	//for N := len(rf.log) - 1; N > rf.commitIndex; N-- {
-	//	count := 0
-	//	for _, matchIdx := range rf.matchIndex {
-	//		if matchIdx >= N {
-	//			count++
-	//		}
-	//	}
-	//
-	//	if count > len(rf.matchIndex)/2 && rf.log[N].Term == rf.currentTerm {
-	//		rf.commitIndex = N
-	//		rf.sendAppliedStates()
-	//		break
-	//	}
-	//}
-	// TODO: CHANGE
-	rf.matchIndex[rf.me] = len(rf.log) - 1
-	copyMatchIndex := make([]int, len(rf.matchIndex))
-	copy(copyMatchIndex, rf.matchIndex)
-	sort.Sort(sort.Reverse(sort.IntSlice(copyMatchIndex)))
-	N := copyMatchIndex[len(copyMatchIndex)/2]
-	if N > rf.commitIndex && rf.log[N].Term == rf.currentTerm {
-		rf.commitIndex = N
-		rf.sendAppliedStates()
+	for N := len(rf.log) - 1; N > rf.commitIndex; N-- {
+		count := 0
+		for _, matchIdx := range rf.matchIndex {
+			if matchIdx >= N {
+				count++
+			}
+		}
+
+		if count > len(rf.matchIndex)/2 && rf.log[N].Term == rf.currentTerm {
+			rf.commitIndex = N
+			rf.sendAppliedStates()
+			break
+		}
 	}
 }
 
