@@ -10,3 +10,12 @@ func GetShardForKey(key string, numShards int) int {
 	hasher.Write([]byte(key))
 	return int(hasher.Sum32())%numShards + 1
 }
+
+func StringArrayContains(s []string, str string) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+	return false
+}
