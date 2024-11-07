@@ -311,5 +311,32 @@ func (server *KvServerImpl) GetShardContents(
 	ctx context.Context,
 	request *proto.GetShardContentsRequest,
 ) (*proto.GetShardContentsResponse, error) {
-	panic("TODO: Part C")
+
+	shardIndex := request.Shard
+	if shardIndex < 0 || int(shardIndex) >= len(server.localStore.shards) {
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid shard index")
+	}
+
+	shard := &server.localStore.shards[shardIndex]
+
+	curTime := time.Now().UnixMilli()
+	shardContents := make([]*proto.GetShardValue, 0)
+	for i := 0; i < len(shard.partitions); i++ {
+		shard.partitions[i].rmu.RLock()
+		for key, item := range shard.partitions[i].store {
+			if item.TTLms < curTime {
+				continue
+			}
+			shardContents = append(shardContents, &proto.GetShardValue{
+				Key:            key,
+				Value:          item.Value,
+				TtlMsRemaining: item.TTLms - curTime,
+			})
+		}
+		shard.partitions[i].rmu.RUnlock()
+	}
+
+	return &proto.GetShardContentsResponse{
+		Values: shardContents,
+	}, nil
 }
