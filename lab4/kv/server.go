@@ -98,6 +98,7 @@ func MakeKVShard(numPartitions int) *KVShard {
 }
 
 func MakeKVStore(numShards int) *KVStore {
+	println("Making KVStore with numShards", numShards, "and numPartitions", NUM_KV_PARTITIONS, "total partitions", numShards*NUM_KV_PARTITIONS)
 	shards := make([]KVShard, numShards)
 	for i := 0; i < numShards; i++ {
 		shards[i] = *MakeKVShard(numShards)
@@ -129,10 +130,10 @@ func (shard *KVShard) getPartition(key string) *KVPartition {
 	return &shard.partitions[partition]
 }
 
-func (shard *KVShard) clearExpired() {
+func (shard *KVShard) clearExpired(i int) {
 	//println("Clearing Shard", shard.isActive.Load())
 	for shard.isActive.Load() {
-		//println("Clearing Shard")
+		println("Clearing Shard", i, time.Now().UnixMilli())
 		for i := 0; i < len(shard.partitions); i++ {
 			if !shard.isActive.Load() {
 				break
@@ -153,7 +154,7 @@ func (store *KVStore) clearExpiredAll() {
 	for i := 0; i < len(store.shards); i++ {
 		store.shards[i].isActive.Store(true)
 		//println("Starting cleanup for shard ", i)
-		go store.shards[i].clearExpired()
+		go store.shards[i].clearExpired(i)
 	}
 }
 
@@ -180,7 +181,7 @@ type KvServerImpl struct {
 	storedShardMap *ShardMapState
 }
 
-func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string) {
+func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneCh chan struct{}) {
 	// TODO: consider updating the partitions one-by-one, or locking them only after the request is made
 
 	shard := &server.localStore.shards[shardId]
@@ -189,6 +190,10 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string) {
 		shard.partitions[i].rmu.Lock()
 		defer shard.partitions[i].rmu.Unlock()
 	}
+
+	defer func() {
+		doneCh <- struct{}{}
+	}()
 
 	// clear the partitions
 	for i := 0; i < len(shard.partitions); i++ {
@@ -223,11 +228,15 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string) {
 		return
 	}
 	// at this point, we have failed to copy the shard from any node.
-
+	logrus.Errorf("Failed to copy shard %d from any node", shardId)
 }
 
 func (server *KvServerImpl) handleShardMapUpdate() {
 	// TODO: Part C
+	if server.storedShardMap == nil {
+		server.storedShardMap = server.shardMap.GetState()
+		return
+	}
 	var prevState ShardMapState = *server.storedShardMap
 	server.storedShardMap = server.shardMap.GetState()
 
@@ -255,11 +264,18 @@ func (server *KvServerImpl) handleShardMapUpdate() {
 		}
 	}
 
-	// at this point, we know what we need to add and remove
+	logrus.Debugf("ShardMap update: %v -> %v", removeShards, addShards)
 
+	// at this point, we know what we need to add and remove
+	doneCh := make(chan struct{})
 	for _, shard := range addShards {
-		server.updateShardMap(shard, server.storedShardMap.ShardsToNodes[shard])
+		go server.updateShardMap(shard-1, server.storedShardMap.ShardsToNodes[shard], doneCh)
 	}
+
+	for range len(addShards) {
+		<-doneCh
+	}
+
 }
 func (server *KvServerImpl) shardMapListenLoop() {
 	listener := server.listener.UpdateChannel()
