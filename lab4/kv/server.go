@@ -189,8 +189,9 @@ type KvServerImpl struct {
 	localStore *KVStore
 
 	// Part C
-	storedShardMap *ShardMapState
-	updatingMutex  sync.RWMutex
+	availableShards map[int]struct{}
+	mu              sync.RWMutex
+	updatingMutex   sync.RWMutex
 }
 
 func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneCh chan struct{}) {
@@ -200,11 +201,6 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneC
 	defer func() {
 		doneCh <- struct{}{}
 	}()
-
-	//if len(fromNode) == 0 || len(fromNode) == 1 && fromNode[0] == server.nodeName {
-	//	logrus.Errorf("No nodes to copy shard %d from", shardId)
-	//	return
-	//}
 
 	// create temporary buffer to store the data
 	tempStore := make([]map[string]KVItem, len(shard.partitions))
@@ -256,51 +252,37 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneC
 	}
 }
 
+func ToShardMapSet(shards []int) map[int]struct{} {
+	set := make(map[int]struct{})
+	for _, shard := range shards {
+		set[shard] = struct{}{}
+	}
+	return set
+}
+
 func (server *KvServerImpl) handleShardMapUpdate() {
 	// TODO: Part C
 	server.updatingMutex.Lock()
 	defer server.updatingMutex.Unlock()
-	var prevState *ShardMapState
-	if server.storedShardMap == nil {
-		// create an empty shard map
 
-		prevState = &ShardMapState{
-			NumShards:     server.shardMap.GetState().NumShards,
-			ShardsToNodes: make(map[int][]string),
-		}
+	server.mu.Lock()
+	defer server.mu.Unlock()
 
-		for i := 1; i <= server.shardMap.GetState().NumShards; i++ {
-			prevState.ShardsToNodes[i] = []string{}
-		}
-	} else {
-		prevState = server.storedShardMap
-	}
-
-	server.storedShardMap = server.shardMap.GetState()
+	var prevAvailableShards map[int]struct{} = server.availableShards
+	server.availableShards = ToShardMapSet(server.shardMap.ShardsForNode(server.nodeName))
 
 	removeShards := make([]int, 0)
 	addShards := make([]int, 0)
 
-	for shard, nodes := range prevState.ShardsToNodes {
-		for _, node := range nodes {
-			if !StringArrayContains(server.storedShardMap.ShardsToNodes[shard], node) { // if new state does not have the shard, this one should be removed
-				removeShards = append(removeShards, shard)
-			}
-		}
-		for _, node := range server.storedShardMap.ShardsToNodes[shard] { // if new state has the shard but old state does not, this one should be added
-			if node == server.nodeName {
-				if !StringArrayContains(nodes, node) {
-					addShards = append(addShards, shard)
-				}
-			}
+	for shard := range prevAvailableShards {
+		if _, ok := server.availableShards[shard]; !ok {
+			removeShards = append(removeShards, shard)
 		}
 	}
 
-	// sanity check, remove shards that are already valid here
-	for _, shard := range removeShards {
-		if IntArrayContains(addShards, shard) {
-			removeShards = removeShards[:len(removeShards)-1]
-			addShards = addShards[:len(addShards)-1]
+	for shard := range server.availableShards {
+		if _, ok := prevAvailableShards[shard]; !ok {
+			addShards = append(addShards, shard)
 		}
 	}
 
@@ -309,12 +291,23 @@ func (server *KvServerImpl) handleShardMapUpdate() {
 	// at this point, we know what we need to add and remove
 	doneCh := make(chan struct{}, len(addShards))
 	for _, shard := range addShards {
-		go server.updateShardMap(shard-1, server.storedShardMap.ShardsToNodes[shard], doneCh)
+		go server.updateShardMap(shard-1, server.shardMap.NodesForShard(shard), doneCh)
+	}
+	// remove shards
+	for _, shard := range removeShards {
+		shardObj := &server.localStore.shards[shard-1]
+		for i := 0; i < len(shardObj.partitions); i++ {
+			shardObj.partitions[i].rmu.Lock()
+			shardObj.partitions[i].store = make(map[string]KVItem)
+			shardObj.partitions[i].rmu.Unlock()
+		}
 	}
 
 	for range len(addShards) {
 		<-doneCh
 	}
+
+	close(doneCh)
 
 }
 func (server *KvServerImpl) shardMapListenLoop() {
@@ -330,30 +323,29 @@ func (server *KvServerImpl) shardMapListenLoop() {
 }
 
 func (server *KvServerImpl) GetShardPartitionForKey(key string) (*KVShard, error) {
-	if server.storedShardMap == nil {
-		return nil, status.Errorf(codes.NotFound, "Shard map not initialized")
-	}
-	hash := GetShardForKey(key, server.storedShardMap.NumShards)
-	// check if shard should be handled by this server
-	if !StringArrayContains(server.storedShardMap.ShardsToNodes[hash], server.nodeName) {
+	hash := GetShardForKey(key, len(server.localStore.shards))
+	if _, ok := server.availableShards[hash]; !ok {
 		return nil, status.Errorf(codes.NotFound, "Shard not handled by this server")
 	}
 	return &server.localStore.shards[hash-1], nil
 }
+
 func MakeKvServer(nodeName string, shardMap *ShardMap, clientPool ClientPool) *KvServerImpl {
 	localStore := MakeKVStore(shardMap.GetState().NumShards)
 	listener := shardMap.MakeListener()
 	server := KvServerImpl{
-		nodeName:   nodeName,
-		shardMap:   shardMap,
-		listener:   &listener,
-		clientPool: clientPool,
-		shutdown:   make(chan struct{}),
-		localStore: localStore,
+		nodeName:        nodeName,
+		shardMap:        shardMap,
+		listener:        &listener,
+		clientPool:      clientPool,
+		shutdown:        make(chan struct{}),
+		localStore:      localStore,
+		availableShards: make(map[int]struct{}),
 	}
-	server.localStore.clearExpiredAll()
+	server.handleShardMapUpdate()
 	go server.shardMapListenLoop()
-	server.initializeShardMap()
+
+	server.localStore.clearExpiredAll()
 	return &server
 }
 
@@ -361,61 +353,6 @@ func (server *KvServerImpl) Shutdown() {
 	server.shutdown <- struct{}{}
 	server.localStore.Shutdown()
 	server.listener.Close()
-}
-
-func (server *KvServerImpl) initializeShardMap() {
-	// Create initial empty state
-	initialState := &ShardMapState{
-		NumShards:     server.shardMap.GetState().NumShards,
-		ShardsToNodes: make(map[int][]string),
-	}
-
-	// Get current state
-	currentState := server.shardMap.GetState()
-
-	server.updatingMutex.Lock()
-	server.storedShardMap = initialState
-	server.updatingMutex.Unlock()
-
-	// Find all shards this node needs to handle
-	shardsToInitialize := make([]int, 0)
-	for shard, nodes := range currentState.ShardsToNodes {
-		if StringArrayContains(nodes, server.nodeName) {
-			shardsToInitialize = append(shardsToInitialize, shard)
-		}
-	}
-
-	if len(shardsToInitialize) == 0 {
-		logrus.Debugf("Node %s has no initial shards to handle", server.nodeName)
-		return
-	}
-
-	// Initialize shards with timeout
-	doneCh := make(chan struct{})
-	timeout := time.After(10 * time.Second) // Adjust timeout as needed
-
-	// Launch copy operations
-	for _, shard := range shardsToInitialize {
-		go server.updateShardMap(shard-1, currentState.ShardsToNodes[shard], doneCh)
-	}
-
-	// Wait for all copy operations or timeout
-	for i := 0; i < len(shardsToInitialize); i++ {
-		select {
-		case <-doneCh:
-			continue
-		case <-timeout:
-			logrus.Warnf("Timeout while initializing shards on node %s", server.nodeName)
-			return
-		}
-	}
-
-	// Update stored state after successful initialization
-	server.updatingMutex.Lock()
-	server.storedShardMap = currentState
-	server.updatingMutex.Unlock()
-
-	logrus.Infof("Node %s initialized with shards: %v", server.nodeName, shardsToInitialize)
 }
 
 func (server *KvServerImpl) Get(
@@ -434,8 +371,8 @@ func (server *KvServerImpl) Get(
 		return nil, status.Errorf(codes.InvalidArgument, "Key cannot be empty")
 	}
 
-	server.updatingMutex.RLock()
-	defer server.updatingMutex.RUnlock()
+	//server.updatingMutex.RLock()
+	//defer server.updatingMutex.RUnlock()
 
 	shard, err := server.GetShardPartitionForKey(key)
 	if err != nil {
@@ -469,8 +406,8 @@ func (server *KvServerImpl) Set(
 		return nil, status.Errorf(codes.InvalidArgument, "Key cannot be empty")
 	}
 
-	server.updatingMutex.RLock()
-	defer server.updatingMutex.RUnlock()
+	//server.updatingMutex.RLock()
+	//defer server.updatingMutex.RUnlock()
 
 	shard, err := server.GetShardPartitionForKey(key)
 	if err != nil {
@@ -494,8 +431,8 @@ func (server *KvServerImpl) Delete(
 	if len(key) == 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "Key cannot be empty")
 	}
-	server.updatingMutex.RLock()
-	defer server.updatingMutex.RUnlock()
+	//server.updatingMutex.RLock()
+	//defer server.updatingMutex.RUnlock()
 	shard, err := server.GetShardPartitionForKey(key)
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "Shard not handled by this server")
