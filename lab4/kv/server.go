@@ -179,6 +179,7 @@ type KvServerImpl struct {
 
 	// Part C
 	storedShardMap *ShardMapState
+	shardMapMutex  sync.RWMutex
 }
 
 func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneCh chan struct{}) {
@@ -199,6 +200,10 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneC
 	for i := 0; i < len(shard.partitions); i++ {
 		shard.partitions[i].store = make(map[string]KVItem)
 	}
+	if len(fromNode) == 0 || len(fromNode) == 1 && fromNode[0] == server.nodeName {
+		logrus.Errorf("No nodes to copy shard %d from", shardId)
+		return
+	}
 
 	startIndex := rand.Intn(len(fromNode))
 	for i := 0; i < len(fromNode); i++ {
@@ -209,7 +214,7 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneC
 		}
 		client, err := server.clientPool.GetClient(fromNode)
 		if err != nil {
-			logrus.Errorf("Failed to get client for node %s: %v", fromNode, err)
+			logrus.Warnf("Failed to get client for node %s: %v", fromNode, err)
 			continue
 		}
 
@@ -218,7 +223,7 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneC
 			Shard: int32(shardId + 1),
 		})
 		if err != nil {
-			logrus.Errorf("Failed to get shard contents from %s: %v", fromNode, err)
+			logrus.Warnf("Failed to get shard contents from %s: %v", fromNode, err)
 			continue
 		}
 
@@ -253,7 +258,10 @@ func (server *KvServerImpl) handleShardMapUpdate() {
 	} else {
 		prevState = server.storedShardMap
 	}
+
+	server.shardMapMutex.Lock()
 	server.storedShardMap = server.shardMap.GetState()
+	server.shardMapMutex.Unlock()
 
 	removeShards := make([]int, 0)
 	addShards := make([]int, 0)
@@ -307,6 +315,11 @@ func (server *KvServerImpl) shardMapListenLoop() {
 }
 
 func (server *KvServerImpl) GetShardPartitionForKey(key string) (*KVShard, error) {
+	server.shardMapMutex.RLock()
+	defer server.shardMapMutex.RUnlock()
+	if server.storedShardMap == nil {
+		return nil, status.Errorf(codes.NotFound, "Shard map not initialized")
+	}
 	hash := GetShardForKey(key, server.storedShardMap.NumShards)
 	// check if shard should be handled by this server
 	if !StringArrayContains(server.storedShardMap.ShardsToNodes[hash], server.nodeName) {
