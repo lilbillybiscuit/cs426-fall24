@@ -19,3 +19,12 @@ func StringArrayContains(s []string, str string) bool {
 	}
 	return false
 }
+
+func IntArrayContains(s []int, i int) bool {
+	for _, v := range s {
+		if v == i {
+			return true
+		}
+	}
+	return false
+}

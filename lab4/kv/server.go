@@ -4,6 +4,7 @@ import (
 	"context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -179,11 +180,87 @@ type KvServerImpl struct {
 	storedShardMap *ShardMapState
 }
 
-func (server *KvServerImpl) handleShardMapUpdate() {
-	// TODO: Part C
-	server.storedShardMap = server.shardMap.GetState()
+func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string) {
+	// TODO: consider updating the partitions one-by-one, or locking them only after the request is made
+
+	shard := &server.localStore.shards[shardId]
+	// lock all partitions
+	for i := 0; i < len(shard.partitions); i++ {
+		shard.partitions[i].rmu.Lock()
+		defer shard.partitions[i].rmu.Unlock()
+	}
+
+	// clear the partitions
+	for i := 0; i < len(shard.partitions); i++ {
+		shard.partitions[i].store = make(map[string]KVItem)
+	}
+
+	startIndex := rand.Intn(len(fromNode))
+	for i := 0; i < len(fromNode); i++ {
+		fromNodeIndex := (startIndex + i) % len(fromNode)
+		fromNode := fromNode[fromNodeIndex]
+		if fromNode == server.nodeName {
+			continue
+		}
+		client, err := server.clientPool.GetClient(fromNode)
+		if err != nil {
+			logrus.Errorf("Failed to get client for node %s: %v", fromNode, err)
+			continue
+		}
+
+		ctx := context.Background()
+		resp, err := client.GetShardContents(ctx, &proto.GetShardContentsRequest{})
+		if err != nil {
+			logrus.Errorf("Failed to get shard contents from %s: %v", fromNode, err)
+			continue
+		}
+
+		// data successful, copy everything
+		for _, item := range resp.Values {
+			partition := shard.getPartition(item.Key)
+			partition.set(item.Key, item.Value, item.TtlMsRemaining)
+		}
+		return
+	}
+	// at this point, we have failed to copy the shard from any node.
+
 }
 
+func (server *KvServerImpl) handleShardMapUpdate() {
+	// TODO: Part C
+	var prevState ShardMapState = *server.storedShardMap
+	server.storedShardMap = server.shardMap.GetState()
+
+	removeShards := make([]int, 0)
+	addShards := make([]int, 0)
+
+	for shard, nodes := range prevState.ShardsToNodes {
+		for _, node := range nodes {
+			if !StringArrayContains(server.storedShardMap.ShardsToNodes[shard], node) { // if new state does not have the shard, this one should be removed
+				removeShards = append(removeShards, shard)
+			}
+		}
+		for _, node := range server.storedShardMap.ShardsToNodes[shard] { // if new state has the shard but old state does not, this one should be added
+			if !StringArrayContains(prevState.ShardsToNodes[shard], node) {
+				addShards = append(addShards, shard)
+			}
+		}
+	}
+
+	// sanity check, remove shards that are already valid here
+	for _, shard := range removeShards {
+		if IntArrayContains(addShards, shard) {
+			removeShards = removeShards[:len(removeShards)-1]
+			addShards = addShards[:len(addShards)-1]
+		}
+	}
+
+	// at this point, we know what we need to add and remove
+
+	for _, shard := range addShards {
+		server.updateShardMap(shard, server.storedShardMap.ShardsToNodes[shard])
+	}
+}
 func (server *KvServerImpl) shardMapListenLoop() {
 	listener := server.listener.UpdateChannel()
 	for {

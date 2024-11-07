@@ -2,13 +2,24 @@
 
 ## A4
 
-**What tradeoffs did you make with your TTL strategy? How fast does it clean up data and how expensive is it in terms of number of keys?**
+**What tradeoffs did you make with your TTL strategy? How fast does it clean up data and how expensive is it in
+terms of number of keys?**
+The overall architecture is as follows:
+- if we are getting a key and we notice that the TTL expired and it hasn't been cleared, then delete the key on the spot
+- Every two seconds, we evenly spread out the "garbage collection" processes
 
-TODO
+Note that there are a few advantages to this solution. First, it ensures a more consistent "garbage collection"-like load on the system. We are doing a lot more small operations over a longer period of time, instead of upfronting an entire array cleanup every 2 seconds, we perform multiple smaller cleanups every 0.5 seconds (eg for 4 nodes).
+
+Second, which is the coolest one, is that goroutines can actually span across multiple CPUs if necessary. By using another partition structure within each shard, we are able to increase the number of CPU cores that can be effectively utilized by the data structure, therefore significantly increasing performance.
+
+Third, this means that when garbage collection is running, it is not necessary for the entire node to go down. Only a subset of requests will hang, but most requests will still pass while a specific region is being garbage collected.
+
+Some negatives are that it makes it a bit more complicated to manage multiple partitions, and the additional use of mutexes might cause a lot of switching overhead on the process scheduler.
+
 
 **If the server was write intensive, would you design it differently? How so?**
 
-TODO
+While we have already introduced a lot of partitions per-data structure, we could add a few more optimizations on top of this. First, we could add a buffer
 
 ## B2
 
