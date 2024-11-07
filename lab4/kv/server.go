@@ -135,9 +135,8 @@ func (shard *KVShard) getPartitionObj(key string) *KVPartition {
 func (shard *KVShard) clearExpired(shouldUseSeparateGoRoutine bool) {
 	//println("Clearing Shard", shard.isActive.Load())
 	for shard.isActive.Load() {
-
 		if shouldUseSeparateGoRoutine {
-			//println("Clearing Shard", time.Now().UnixMilli())
+			println("Clearing Shard", time.Now().UnixMilli())
 			for i := 0; i < len(shard.partitions); i++ {
 				if !shard.isActive.Load() {
 					break
@@ -194,13 +193,9 @@ type KvServerImpl struct {
 	updatingMutex   sync.RWMutex
 }
 
-func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneCh chan struct{}) {
+func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string) {
 	// TODO: consider updating the partitions one-by-one, or locking them only after the request is made
-
 	shard := &server.localStore.shards[shardId]
-	defer func() {
-		doneCh <- struct{}{}
-	}()
 
 	// create temporary buffer to store the data
 	tempStore := make([]map[string]KVItem, len(shard.partitions))
@@ -262,14 +257,17 @@ func ToShardMapSet(shards []int) map[int]struct{} {
 
 func (server *KvServerImpl) handleShardMapUpdate() {
 	// TODO: Part C
-	server.updatingMutex.Lock()
-	defer server.updatingMutex.Unlock()
+	//server.updatingMutex.Lock()
+	//defer server.updatingMutex.Unlock()
+	logrus.Debugf("Handling shard map update on node %s", server.nodeName)
 
 	server.mu.Lock()
-	defer server.mu.Unlock()
+	prevAvailableShards := server.availableShards
+	newAvailableShards := ToShardMapSet(server.shardMap.ShardsForNode(server.nodeName))
+	server.mu.Unlock()
 
-	var prevAvailableShards map[int]struct{} = server.availableShards
-	server.availableShards = ToShardMapSet(server.shardMap.ShardsForNode(server.nodeName))
+	//var prevAvailableShards map[int]struct{} = server.availableShards
+	//server.availableShards = ToShardMapSet(server.shardMap.ShardsForNode(server.nodeName))
 
 	removeShards := make([]int, 0)
 	addShards := make([]int, 0)
@@ -280,7 +278,7 @@ func (server *KvServerImpl) handleShardMapUpdate() {
 		}
 	}
 
-	for shard := range server.availableShards {
+	for shard := range newAvailableShards {
 		if _, ok := prevAvailableShards[shard]; !ok {
 			addShards = append(addShards, shard)
 		}
@@ -289,10 +287,15 @@ func (server *KvServerImpl) handleShardMapUpdate() {
 	logrus.Debugf("ShardMap update on node %s: %v -> %v", server.nodeName, removeShards, addShards)
 
 	// at this point, we know what we need to add and remove
-	doneCh := make(chan struct{}, len(addShards))
+	var wg sync.WaitGroup
 	for _, shard := range addShards {
-		go server.updateShardMap(shard-1, server.shardMap.NodesForShard(shard), doneCh)
+		wg.Add(1)
+		go func(s int) {
+			defer wg.Done()
+			server.updateShardMap(s-1, server.shardMap.NodesForShard(s))
+		}(shard)
 	}
+	wg.Wait()
 	// remove shards
 	for _, shard := range removeShards {
 		shardObj := &server.localStore.shards[shard-1]
@@ -302,13 +305,9 @@ func (server *KvServerImpl) handleShardMapUpdate() {
 			shardObj.partitions[i].rmu.Unlock()
 		}
 	}
-
-	for range len(addShards) {
-		<-doneCh
-	}
-
-	close(doneCh)
-
+	server.mu.Lock()
+	server.availableShards = newAvailableShards
+	server.mu.Unlock()
 }
 func (server *KvServerImpl) shardMapListenLoop() {
 	listener := server.listener.UpdateChannel()
@@ -323,6 +322,8 @@ func (server *KvServerImpl) shardMapListenLoop() {
 }
 
 func (server *KvServerImpl) GetShardPartitionForKey(key string) (*KVShard, error) {
+	server.mu.RLock()
+	defer server.mu.RUnlock()
 	hash := GetShardForKey(key, len(server.localStore.shards))
 	if _, ok := server.availableShards[hash]; !ok {
 		return nil, status.Errorf(codes.NotFound, "Shard not handled by this server")
