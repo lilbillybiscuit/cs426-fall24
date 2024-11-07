@@ -55,3 +55,97 @@ The main ramification of partial failures on Set calls is that the nodes that fa
 - Inconsistent nodes: nodes that failed during Set will have diverging values from nodes that updated successfully
 - Data loss: if the nodes that updated successfully go offline later, there is no way for clients to read the latest update
 
+## D2
+
+To test whether exhausting a single node's resources would cause it to crash, we tested a single node with a high Get QPS and frequent TTL expirations.
+- shardmaps: "single-node.json"
+- flags: -get-qps=200 -set-qps=50 -ttl=5s -num-keys=100
+
+As expected this gave a 100% success rate:
+```
+Stress test completed!
+Get requests: 12020/12020 succeeded = 100.000000% success rate
+Set requests: 3020/3020 succeeded = 100.000000% success rate
+Correct responses: 11981/11981 = 100.000000%
+Total requests: 15040 = 250.659890 QPS
+```
+
+Next, we tested whether a high TTL and redundant nodes between shards (test-2-node-full) could cause failures due to partial Sets. If clients receive different values for the same key, this would highlight inconsistency and unpredictable behavior.
+- shardmaps: "test-2-node-full"
+- flags: -ttl=3600s -num-keys=1000
+
+This caused a decrease in success rate:
+```
+Stress test completed!
+Get requests: 5900/6020 succeeded = 98.006645% success rate
+Set requests: 1770/1820 succeeded = 97.252747% success rate
+Correct responses: 5825/5900 = 98.728814%
+Total requests: 7840 = 130.659142 QPS
+Stress test completed!
+Get requests: 5900/6020 succeeded = 98.006645% success rate
+Set requests: 1770/1820 succeeded = 97.252747% success rate
+Correct responses: 5808/5898 = 98.474059%
+Total requests: 7840 = 130.660182 QPS
+```
+
+With an example error as follows:
+`ERRO[2024-11-07T05:47:44Z] get returned wrong answer: no value found, but there unexpired potential values: {val=boudbminkertxugvwtwmstfddkqxevfg, ttlRemaining=3540655ms, writtenAtAgo=59343ms, wasError=true},   key=vaqdwvmuqd`
+
+We also tested a high Set and Get load with short TTL in order to see whether a high write load can lead to race conditions or concurrency issues, leading to data loss or inconsistency. 
+- shardmaps: "test-3-node-100-shard.json"
+- flags: -get-qps=150 -set-qps=100 -ttl=2s -num-keys=500
+
+There was a big decrease in success rate for Get/Set requests, but the correct reponse rate stayed high. All errors were as such:
+`ERRO[2024-11-07T05:50:32Z] get failed: "rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:9000: connect: connection refused\""  key=wdikxgruth`
+
+```
+Stress test completed!
+Get requests: 5986/9012 succeeded = 66.422548% success rate
+Set requests: 3995/6020 succeeded = 66.362126% success rate
+Correct responses: 5980/5981 = 99.983280%
+Total requests: 15032 = 250.506523 QPS
+Stress test completed!
+Get requests: 5986/9011 succeeded = 66.429919% success rate
+Set requests: 3996/6020 succeeded = 66.378738% success rate
+Correct responses: 5976/5976 = 100.000000%
+Total requests: 15031 = 250.489277 QPS
+Stress test completed!
+Get requests: 5991/9016 succeeded = 66.448536% success rate
+Set requests: 3997/6020 succeeded = 66.395349% success rate
+Correct responses: 5987/5987 = 100.000000%
+Total requests: 15036 = 250.584788 QPS
+```
+
+Finally, we stress tested using a high QPS in the largest key set (test-5-node) with a very short TTL, which would mean that keys would frequently expire and be refreshed. This puts stress on KV to handle frequent insertions and evictions, and if memory management isn't optimized, KV would run out of memory and lead to potential crashes or performace impact.
+- shardmaps: "test-5-node.json"
+- flags: -get-qps=200 -set-qps=50 -ttl=1s -num-keys=2000
+
+This resulted in several error messages identical to the format in the third stress test for Set requests, but overall saw a near perfect response rate (one edge case failed). 
+
+```
+Stress test completed!
+Get requests: 12020/12020 succeeded = 100.000000% success rate
+Set requests: 2966/3020 succeeded = 98.211921% success rate
+Correct responses: 12019/12019 = 100.000000%
+Total requests: 15040 = 250.653565 QPS
+Stress test completed!
+Stress test completed!
+Get requests: 12020/12020 succeeded = 100.000000% success rate
+Get requests: 12020/12020 succeeded = 100.000000% success rate
+Set requests: 2966/3020 succeeded = 98.211921% success rate
+Set requests: 2964/3020 succeeded = 98.145695% success rate
+Correct responses: 12017/12018 = 99.991679%
+Total requests: 15040 = 250.660425 QPS
+Correct responses: 12017/12017 = 100.000000%
+Total requests: 15040 = 250.655556 QPS
+Stress test completed!
+Get requests: 12020/12020 succeeded = 100.000000% success rate
+Set requests: 2963/3020 succeeded = 98.112583% success rate
+Correct responses: 12015/12016 = 99.991678%
+Total requests: 15040 = 250.654761 QPS
+Stress test completed!
+Get requests: 12017/12017 succeeded = 100.000000% success rate
+Set requests: 2986/3020 succeeded = 98.874172% success rate
+Correct responses: 12015/12016 = 99.991678%
+Total requests: 15037 = 250.606045 QPS
+```

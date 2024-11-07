@@ -1,3 +1,5 @@
+go run cmd/server/server.go --shardmap shardmaps/test-5-node.json --node n1 n2 n3 n4 n5
+
 go run cmd/stress/tester.go -shardmap="shardmaps/single-node.json" -get-qps=200 -set-qps=50 -ttl=5s -num-keys=100  # single-node load, high Get QPS, frequent TTL expirations
 go run cmd/stress/tester.go -shardmap="shardmaps/test-2-node-full.json" -ttl=3600s -num-keys=1000 # redundancy, consistency, load distribution
 go run cmd/stress/tester.go -shardmap="shardmaps/test-3-node-100-shard.json" -get-qps=150 -set-qps=100 -ttl=2s -num-keys=500 # concurrency, TTL churn, load balancing + dynamic env.
