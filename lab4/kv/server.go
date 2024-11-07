@@ -2,12 +2,13 @@ package kv
 
 import (
 	"context"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"cs426.yale.edu/lab4/kv/proto"
 	"github.com/sirupsen/logrus"
@@ -46,7 +47,7 @@ func (store *KVPartition) get(key string) (KVItem, bool) {
 		if item.TTLms > time.Now().UnixMilli() {
 			return item, true
 		} else {
-			store.delete(key)
+			delete(store.store, key)
 			return KVItem{}, false
 		}
 	}
@@ -99,7 +100,7 @@ func MakeKVStore(numShards int) *KVStore {
 	logrus.Debugf("Making KVStore with numShards", numShards, "and numPartitions", NUM_KV_PARTITIONS, "total partitions", numShards*NUM_KV_PARTITIONS)
 	shards := make([]KVShard, numShards)
 	for i := 0; i < numShards; i++ {
-		shards[i] = *MakeKVShard(numShards)
+		shards[i] = *MakeKVShard(NUM_KV_PARTITIONS)
 	}
 
 	return &KVStore{
@@ -136,7 +137,7 @@ func (shard *KVShard) clearExpired(shouldUseSeparateGoRoutine bool) {
 	//println("Clearing Shard", shard.isActive.Load())
 	for shard.isActive.Load() {
 		if shouldUseSeparateGoRoutine {
-			println("Clearing Shard", time.Now().UnixMilli())
+			// println("Clearing Shard", time.Now().UnixMilli())
 			for i := 0; i < len(shard.partitions); i++ {
 				if !shard.isActive.Load() {
 					break
@@ -194,6 +195,7 @@ type KvServerImpl struct {
 }
 
 func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string) {
+	logrus.Debugf("Starting shard transfer for shard %d to node %s", shardId, server.nodeName)
 	// TODO: consider updating the partitions one-by-one, or locking them only after the request is made
 	shard := &server.localStore.shards[shardId]
 
@@ -212,7 +214,7 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string) {
 		}
 		client, err := server.clientPool.GetClient(fromNode)
 		if err != nil {
-			logrus.Debugf("Failed to get client for node %s: %v", fromNode, err)
+			// logrus.Debugf("Failed to get client for node %s: %v", fromNode, err)
 			continue
 		}
 
@@ -221,7 +223,7 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string) {
 			Shard: int32(shardId + 1),
 		})
 		if err != nil {
-			logrus.Debugf("Failed to get shard contents from %s: %v", fromNode, err)
+			// logrus.Debugf("Failed to get shard contents from %s: %v", fromNode, err)
 			continue
 		}
 
@@ -245,6 +247,7 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string) {
 		shard.partitions[i].store = tempStore[i]
 		shard.partitions[i].rmu.Unlock()
 	}
+	logrus.Debugf("Completed shard transfer for shard %d; tempStore has %d partitions", shardId, len(tempStore))
 }
 
 func ToShardMapSet(shards []int) map[int]struct{} {
@@ -259,7 +262,8 @@ func (server *KvServerImpl) handleShardMapUpdate() {
 	// TODO: Part C
 	//server.updatingMutex.Lock()
 	//defer server.updatingMutex.Unlock()
-	logrus.Debugf("Handling shard map update on node %s", server.nodeName)
+	logrus.Debugf("Entering handleShardMapUpdate for node %s", server.nodeName)
+	defer logrus.Debugf("Exiting handleShardMapUpdate for node %s", server.nodeName)
 
 	server.mu.Lock()
 	prevAvailableShards := server.availableShards
@@ -308,6 +312,7 @@ func (server *KvServerImpl) handleShardMapUpdate() {
 	server.mu.Lock()
 	server.availableShards = newAvailableShards
 	server.mu.Unlock()
+	logrus.Debugf("Node %s is now handling %d shards", server.nodeName, len(server.availableShards))
 }
 func (server *KvServerImpl) shardMapListenLoop() {
 	listener := server.listener.UpdateChannel()

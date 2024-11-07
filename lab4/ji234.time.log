@@ -7,6 +7,8 @@ Date  Started  Spent Work completed
 ----  -------  ----  --------------
 11/6   1:00pm  0:30  read assignment
 11/6   8:00pm  1:30  finished part B
+11/6  11:00pm  6:00  debugged part C, finished part D, wrote discussion
                ----
-               2:00  TOTAL time spent
+               8:00  TOTAL time spent
 
+This assignment seemed to be very easy-going up until debugging Part C. Because it was a partner project, I couldn't really see what was going on with Part A or during the write process of Part C. I had to rely on my partner to debug, while I was working on unit test cases as well as Part D and discussions. By the time I was requested to help debug together, the code was quite difficult to understand, and while we version controlled through git, we had issues in keeping track of previous working versions of the code, and ultimately, while we had mostly everything working before midnight, we continued to make changes in order to pass edge cases, which ultimately stretched on for another 5 hours. It was quite a painful and sleepless debugging process, and I wish we had more time to work on this project. 
