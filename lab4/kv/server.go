@@ -98,7 +98,7 @@ func MakeKVShard(numPartitions int) *KVShard {
 }
 
 func MakeKVStore(numShards int) *KVStore {
-	println("Making KVStore with numShards", numShards, "and numPartitions", NUM_KV_PARTITIONS, "total partitions", numShards*NUM_KV_PARTITIONS)
+	logrus.Debugf("Making KVStore with numShards", numShards, "and numPartitions", NUM_KV_PARTITIONS, "total partitions", numShards*NUM_KV_PARTITIONS)
 	shards := make([]KVShard, numShards)
 	for i := 0; i < numShards; i++ {
 		shards[i] = *MakeKVShard(numShards)
@@ -133,7 +133,7 @@ func (shard *KVShard) getPartition(key string) *KVPartition {
 func (shard *KVShard) clearExpired(i int) {
 	//println("Clearing Shard", shard.isActive.Load())
 	for shard.isActive.Load() {
-		println("Clearing Shard", i, time.Now().UnixMilli())
+		//println("Clearing Shard", i, time.Now().UnixMilli())
 		for i := 0; i < len(shard.partitions); i++ {
 			if !shard.isActive.Load() {
 				break
@@ -143,8 +143,8 @@ func (shard *KVShard) clearExpired(i int) {
 				shard.partitions[i].rmu_clean.Unlock()
 				go shard.partitions[i].clearExpired()
 			}
-			var delayTime time.Duration = time.Duration(2 / (len(shard.partitions) + 1))
-			time.Sleep(time.Second * delayTime)
+			delayTime := time.Duration(2000/len(shard.partitions)) * time.Millisecond
+			time.Sleep(delayTime)
 		}
 	}
 }
@@ -214,7 +214,9 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneC
 		}
 
 		ctx := context.Background()
-		resp, err := client.GetShardContents(ctx, &proto.GetShardContentsRequest{})
+		resp, err := client.GetShardContents(ctx, &proto.GetShardContentsRequest{
+			Shard: int32(shardId + 1),
+		})
 		if err != nil {
 			logrus.Errorf("Failed to get shard contents from %s: %v", fromNode, err)
 			continue
@@ -223,7 +225,10 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneC
 		// data successful, copy everything
 		for _, item := range resp.Values {
 			partition := shard.getPartition(item.Key)
-			partition.set(item.Key, item.Value, item.TtlMsRemaining)
+			partition.store[item.Key] = KVItem{
+				Value: item.Value,
+				TTLms: time.Now().UnixMilli() + item.TtlMsRemaining,
+			}
 		}
 		return
 	}
@@ -233,11 +238,21 @@ func (server *KvServerImpl) updateShardMap(shardId int, fromNode []string, doneC
 
 func (server *KvServerImpl) handleShardMapUpdate() {
 	// TODO: Part C
+	var prevState *ShardMapState
 	if server.storedShardMap == nil {
-		server.storedShardMap = server.shardMap.GetState()
-		return
+		// create an empty shard map
+
+		prevState = &ShardMapState{
+			NumShards:     server.shardMap.GetState().NumShards,
+			ShardsToNodes: make(map[int][]string),
+		}
+
+		for i := 1; i <= server.shardMap.GetState().NumShards; i++ {
+			prevState.ShardsToNodes[i] = []string{}
+		}
+	} else {
+		prevState = server.storedShardMap
 	}
-	var prevState ShardMapState = *server.storedShardMap
 	server.storedShardMap = server.shardMap.GetState()
 
 	removeShards := make([]int, 0)
@@ -250,8 +265,10 @@ func (server *KvServerImpl) handleShardMapUpdate() {
 			}
 		}
 		for _, node := range server.storedShardMap.ShardsToNodes[shard] { // if new state has the shard but old state does not, this one should be added
-			if !StringArrayContains(prevState.ShardsToNodes[shard], node) {
-				addShards = append(addShards, shard)
+			if node == server.nodeName {
+				if !StringArrayContains(nodes, node) {
+					addShards = append(addShards, shard)
+				}
 			}
 		}
 	}
@@ -264,7 +281,7 @@ func (server *KvServerImpl) handleShardMapUpdate() {
 		}
 	}
 
-	logrus.Debugf("ShardMap update: %v -> %v", removeShards, addShards)
+	logrus.Debugf("ShardMap update on node %s: %v -> %v", server.nodeName, removeShards, addShards)
 
 	// at this point, we know what we need to add and remove
 	doneCh := make(chan struct{})
@@ -405,8 +422,9 @@ func (server *KvServerImpl) GetShardContents(
 	request *proto.GetShardContentsRequest,
 ) (*proto.GetShardContentsResponse, error) {
 
-	shardIndex := request.Shard
+	shardIndex := request.Shard - 1
 	if shardIndex < 0 || int(shardIndex) >= len(server.localStore.shards) {
+		logrus.Errorf("Invalid shard index %d", shardIndex)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid shard index")
 	}
 
